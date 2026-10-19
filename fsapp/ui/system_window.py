@@ -21,6 +21,7 @@ from ..system import reports as R
 from ..system.db import ACCOUNT_FIELDS, Account, CompanyDB
 from ..updater import UpdateChecker
 from ..version import BUILD
+from .aging_view import AgingPage
 from .dashboard_view import DashboardPage
 
 NAVY = "#12355b"
@@ -1333,7 +1334,9 @@ class SystemWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.reports_page = ReportsPage(self)
         self.dashboard = DashboardPage(self)
+        self.aging_page = AgingPage(self)
         self.pages = [("📊 لوحة التحكم", self.dashboard), ("📈 التقارير", self.reports_page),
+                      ("👥 العملاء والموردين", self.aging_page),
                       ("🗓 البيانات الشهرية", DataPage(self)), ("🔗 ربط الحسابات", MappingPage(self)),
                       ("📋 البنود", ListsPage(self)), ("⚙ الإعدادات", SettingsPage(self))]
         for title, page in self.pages:
@@ -1344,7 +1347,7 @@ class SystemWindow(QMainWindow):
         h.addWidget(self.stack, 1)
         self.setCentralWidget(central)
         self.data_changed()
-        self.nav.setCurrentRow(0 if self.db.periods() else 2)
+        self.nav.setCurrentRow(0 if self.db.periods() else 3)
         self.check_updates(manual=False)
 
     # -------- helpers
@@ -1390,10 +1393,12 @@ class SystemWindow(QMainWindow):
         else:
             self.reports_page.load()
             self.dashboard.load()
+            self.aging_page.load()
 
     def params_changed(self):
         self.reports_page.show_report()
         self.dashboard.load()
+        self.aging_page.load()
 
     # -------- updates
     def check_updates(self, manual):
