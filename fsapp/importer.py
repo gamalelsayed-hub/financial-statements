@@ -209,3 +209,27 @@ def validate(accounts, tol=0.5):
 
 def natural_key(code):
     return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", code)]
+
+
+HEADER_WORDS = {
+    "branch": ("الفرع", "فرع", "branch"),
+    "code": ("رقم الحساب", "كود الحساب", "كود", "رقم", "code", "account no", "account code"),
+    "name": ("اسم الحساب", "البيان", "الحساب", "اسم", "account name", "name", "description"),
+    "md": ("صافي", "المبلغ", "net", "amount"),
+}
+
+
+def guess_by_headers(rows, roles=("branch", "code", "name", "md")):
+    """Find a header row by its titles. Returns (first data row, {role: column}) or (None, {})."""
+    for i, r in enumerate(rows[:30]):
+        cells = [str(v).strip().lower() if v is not None else "" for v in r]
+        found = {}
+        for role in roles:
+            for word in HEADER_WORDS[role]:
+                col = next((c for c, text in enumerate(cells) if text and word in text and c not in found.values()), None)
+                if col is not None:
+                    found[role] = col
+                    break
+        if len(found) >= 2 and ("code" in found or "branch" in found):
+            return i + 1, found
+    return None, {}

@@ -1,11 +1,11 @@
 import sys
 
-from PySide6.QtCore import QCoreApplication, QSettings
+from PySide6.QtCore import QCoreApplication, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
 from fsapp.i18n import set_lang
-from fsapp.ui.main_window import MainWindow
+from fsapp.ui.system_window import launch
 
 
 def main():
@@ -13,11 +13,11 @@ def main():
     QCoreApplication.setApplicationName("FinancialStatements")
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    app.setLayoutDirection(Qt.RightToLeft)
     if sys.platform == "win32":
         app.setFont(QFont("Segoe UI", 10))
-    set_lang(QSettings().value("lang", "ar"))
-    win = MainWindow()
-    win.show()
+    set_lang("ar")
+    launch()
     sys.exit(app.exec())
 
 
