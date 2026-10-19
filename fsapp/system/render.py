@@ -7,8 +7,8 @@ CSS = """
 body { font-family: 'Segoe UI', 'Tahoma', 'Arial'; font-size: 10pt; color: #1d2433; }
 table.st { border-collapse: collapse; margin-top: 6px; }
 table.st td, table.st th { padding: 3px 7px; }
-table.st th { background: #12355b; color: white; font-weight: 600; }
-td.num { text-align: right; white-space: nowrap; }
+table.st th, table.st td.th { background: #12355b; color: white; font-weight: 600; }
+td.num { white-space: nowrap; }
 tr.hdr td { font-weight: 700; color: #12355b; padding-top: 8px; border-bottom: 1px solid #c9d3e0; }
 tr.sub td { font-weight: 700; border-top: 1px solid #8a96a8; background: #f2f5f9; }
 tr.tot td { font-weight: 800; border-top: 2px solid #12355b; border-bottom: 3px double #12355b; background: #e6edf6; }
@@ -21,21 +21,29 @@ h3 { color: #12355b; margin: 10px 0 2px 0; }
 """
 
 
+LRM = "\u200e"
+
+
+def ltr(text):
+    """Keep a number like -4.1% in left-to-right order inside right-to-left text."""
+    return f"{LRM}{text}{LRM}"
+
+
 def fmt_value(v, f):
     if v is None:
         return ""
     if isinstance(v, str) or f == "t":
         return html.escape(str(v))
     if f == "%":
-        return f"{v * 100:,.1f}%"
+        return ltr(f"{v * 100:,.1f}%")
     if f == "x":
-        return f"{v:,.2f}"
+        return ltr(f"{v:,.2f}")
     if f == "d":
-        return f"{v:,.0f}"
+        return ltr(f"{v:,.0f}")
     if abs(v) < 0.5:
         return "-"
     s = f"{abs(v):,.0f}"
-    return f"({s})" if v < 0 else s
+    return ltr(f"({s})" if v < 0 else s)
 
 
 def value_format(table, row, i):
@@ -54,7 +62,15 @@ def cell_text(v, f):
     return fmt_value(v, f)
 
 
-def report_html(rep, company, wrap=True):
+def _doc(body, rtl):
+    d = "rtl" if rtl else "ltr"
+    return f'<html dir="{d}"><head><meta charset="utf-8"><style>{CSS}</style></head><body dir="{d}">{body}</body></html>'
+
+
+def report_html(rep, company, wrap=True, rtl=True):
+    """rtl: Arabic reports read right to left (first column on the right); English left to right."""
+    d = "rtl" if rtl else "ltr"
+    start = "right" if rtl else "left"
     out = [f'<p align="center"><b style="font-size:14pt;color:#12355b">{html.escape(company)}</b><br>'
            f'<b style="font-size:12pt;color:#12355b">{html.escape(rep.title)}</b><br>'
            f'<span class="sub">{html.escape(rep.subtitle)}</span></p>']
@@ -64,12 +80,16 @@ def report_html(rep, company, wrap=True):
             continue
         if b.title:
             out.append(f"<h3>{html.escape(b.title)}</h3>")
-        heads = "".join(f"<th>{html.escape(str(h))}</th>" for h in b.columns)
-        rows = []
         ncols = len(b.columns)
+        # header cells as <td>: the Qt text engine takes column widths from the first row's td widths
+        label_w = max(18, min(34, 100 - 9 * (ncols - 1)))
+        width_attr = f' width="{label_w}%"'
+        heads = "".join(f'<td class="th" align="center"{width_attr if i == 0 else ""}>{html.escape(str(h))}</td>'
+                        for i, h in enumerate(b.columns))
+        rows = []
         for r in b.rows:
             if r.kind == "hdr" and not r.values:
-                rows.append(f'<tr class="hdr"><td nowrap colspan="{ncols}">{html.escape(r.label)}</td></tr>')
+                rows.append(f'<tr class="hdr"><td align="{start}" colspan="{ncols}">{html.escape(r.label)}</td></tr>')
                 continue
             cells = []
             for i, v in enumerate(r.values):
@@ -78,20 +98,21 @@ def report_html(rep, company, wrap=True):
                 st = r.styles[i] if r.styles and i < len(r.styles) and r.styles[i] else ""
                 if not st and isinstance(v, str) and (v.startswith("▲") or v.startswith("▼")):
                     st = "warn"
-                cells.append(f'<td nowrap class="{cls} {st}">{fmt_value(v, f)}</td>')
+                align = "right" if cls == "num" else start  # numbers: right edge in both directions
+                cells.append(f'<td nowrap align="{align}" class="{cls} {st}">{fmt_value(v, f)}</td>')
             cells += ["<td></td>"] * (ncols - 1 - len(r.values))
-            rows.append(f'<tr class="{r.kind}"><td nowrap>{html.escape(r.label)}</td>{"".join(cells)}</tr>')
-        out.append(f'<table class="st" dir="rtl" width="100%" cellspacing="0"><tr>{heads}</tr>{"".join(rows)}</table>')
+            rows.append(f'<tr class="{r.kind}"><td align="{start}">{html.escape(r.label)}</td>{"".join(cells)}</tr>')
+        out.append(f'<table class="st" dir="{d}" width="100%" cellspacing="0"><tr>{heads}</tr>{"".join(rows)}</table>')
     body = "".join(out)
     if not wrap:
         return body
-    return f'<html dir="rtl"><head><meta charset="utf-8"><style>{CSS}</style></head><body dir="rtl">{body}</body></html>'
+    return _doc(body, rtl)
 
 
-def reports_html(reps, company):
+def reports_html(reps, company, rtl=True):
     br = '<div style="page-break-before: always;"></div>'
-    body = br.join(report_html(r, company, wrap=False) for r in reps)
-    return f'<html dir="rtl"><head><meta charset="utf-8"><style>{CSS}</style></head><body dir="rtl">{body}</body></html>'
+    body = br.join(report_html(r, company, wrap=False, rtl=rtl) for r in reps)
+    return _doc(body, rtl)
 
 
 # ---------------------------------------------------------------- Excel

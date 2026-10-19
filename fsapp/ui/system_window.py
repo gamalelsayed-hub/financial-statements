@@ -42,7 +42,7 @@ def error(parent, text):
     QMessageBox.critical(parent, "خطأ", text)
 
 
-def write_pdf(html, path, landscape=False):
+def write_pdf(html, path, landscape=False, rtl=True):
     writer = QPdfWriter(path)
     writer.setPageLayout(QPageLayout(QPageSize(QPageSize.A4),
                                      QPageLayout.Landscape if landscape else QPageLayout.Portrait,
@@ -51,7 +51,7 @@ def write_pdf(html, path, landscape=False):
     doc = QTextDocument()
     doc.setDefaultFont(QFont("Segoe UI" if sys.platform == "win32" else "DejaVu Sans", 8))
     opt = QTextOption()
-    opt.setTextDirection(Qt.RightToLeft)
+    opt.setTextDirection(Qt.RightToLeft if rtl else Qt.LeftToRight)
     doc.setDefaultTextOption(opt)
     doc.setHtml(html)
     rect = writer.pageLayout().paintRectPixels(writer.resolution())

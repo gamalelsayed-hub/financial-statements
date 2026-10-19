@@ -7,13 +7,16 @@ from .categories import GROUP_NAMES
 NUM_COLOR_NEG = "#b42318"
 
 
+LRM = "\u200e"
+
+
 def fmt(v, decimals=0):
     if v is None:
         return "—"
     if abs(v) < 0.5 * 10 ** -decimals:
         return "-"
     s = f"{abs(v):,.{decimals}f}"
-    return f"({s})" if v < 0 else s
+    return LRM + (f"({s})" if v < 0 else s) + LRM
 
 
 def fmt_ratio(r):
@@ -21,11 +24,11 @@ def fmt_ratio(r):
     if v is None:
         return t("st_na")
     if r["fmt"] == "%":
-        return f"{v * 100:,.1f}%"
+        return f"{LRM}{v * 100:,.1f}%{LRM}"
     if r["fmt"] == "x":
-        return f"{v:,.2f} {t('times')}"
+        return f"{LRM}{v:,.2f}{LRM} {t('times')}"
     if r["fmt"] == "days":
-        return f"{v:,.0f} {t('days_unit')}"
+        return f"{LRM}{v:,.0f}{LRM} {t('days_unit')}"
     return fmt(v)
 
 
@@ -93,7 +96,7 @@ def wrap(body):
 
 def _row(label, values, kind="item", note=""):
     a = _align()
-    cells = "".join(f'<td class="num">{fmt(v)}</td>' for v in values)
+    cells = "".join(f'<td class="num" align="right">{fmt(v)}</td>' for v in values)
     return (f'<tr class="{kind}"><td class="lbl" align="{a}">{esc(label)}</td>'
             f'<td class="note">{note}</td>{cells}</tr>')
 
@@ -175,7 +178,7 @@ def equity_statement(st, meta, notes):
     for part, label, kind in (("open", "eq_open", "sub"), ("ni", "eq_ni", "item"),
                               ("other", "eq_other", "item"), ("close", "eq_close", "tot")):
         vals = [eq["rows"][k][part] for k in cols]
-        cells = "".join(f'<td class="num">{fmt(v)}</td>' for v in vals + [sum(vals)])
+        cells = "".join(f'<td class="num" align="right">{fmt(v)}</td>' for v in vals + [sum(vals)])
         body += f'<tr class="{kind}"><td align="{a}" width="28%">{t(label)}</td>{cells}</tr>'
     table = (f'<table class="st" dir="{_dir()}" width="100%" cellspacing="0">'
              f'<tr><th width="30%"></th>{heads}</tr>{body}</table>')
@@ -190,13 +193,13 @@ def notes_page(notes, meta):
         tc = tp = tm = 0
         for ac in accounts:
             rows += (f'<tr class="item"><td>{esc(ac.code)}</td><td align="{a}">{esc(ac.name)}</td>'
-                     f'<td class="num">{fmt(ac.open_net)}</td><td class="num">{fmt(ac.mov_net)}</td>'
-                     f'<td class="num">{fmt(ac.close_net)}</td></tr>')
+                     f'<td class="num" align="right">{fmt(ac.open_net)}</td><td class="num" align="right">{fmt(ac.mov_net)}</td>'
+                     f'<td class="num" align="right">{fmt(ac.close_net)}</td></tr>')
             tp += ac.open_net
             tm += ac.mov_net
             tc += ac.close_net
-        rows += (f'<tr class="sub"><td></td><td align="{a}">{t("total")}</td><td class="num">{fmt(tp)}</td>'
-                 f'<td class="num">{fmt(tm)}</td><td class="num">{fmt(tc)}</td></tr>')
+        rows += (f'<tr class="sub"><td></td><td align="{a}">{t("total")}</td><td class="num" align="right">{fmt(tp)}</td>'
+                 f'<td class="num" align="right">{fmt(tm)}</td><td class="num" align="right">{fmt(tc)}</td></tr>')
         out += (f'<h2>({i}) {esc(t(key))}</h2>'
                 f'<table class="st" dir="{_dir()}" width="100%" cellspacing="0"><tr><th>{t("col_code")}</th>'
                 f'<th align="{a}">{t("col_name")}</th><th>{t("opening")}</th><th>{t("movement")}</th>'
@@ -225,7 +228,7 @@ def ratios_page(st, meta):
           (t("total_assets"), st.bs["assets"][0]), (t("total_EQ"), st.bs["EQ_total"][0]),
           (t("cfo"), st.cf["cfo"])]
     out += f"<h2>{t('key_figures')}</h2><table class='st' dir='{_dir()}' width='100%'>"
-    out += "".join(f"<tr class='item'><td align='{a}'>{esc(k)}</td><td class='num'>{fmt(v)}</td></tr>" for k, v in kf)
+    out += "".join(f"<tr class='item'><td align='{a}'>{esc(k)}</td><td class='num' align='right'>{fmt(v)}</td></tr>" for k, v in kf)
     out += "</table>"
     groups = []
     for r in st.ratios:
@@ -237,7 +240,7 @@ def ratios_page(st, meta):
             stt = r["status"]
             rows += (f'<tr class="item"><td align="{a}"><b>{esc(ratio_text(r["key"], 0))}</b><br>'
                      f'<span class="sub">{esc(ratio_text(r["key"], 2))}</span></td>'
-                     f'<td class="num"><b>{fmt_ratio(r)}</b></td>'
+                     f'<td class="num" align="right"><b>{fmt_ratio(r)}</b></td>'
                      f'<td align="{a}" class="sub">{esc(ratio_text(r["key"], 1))}</td>'
                      f'<td align="center" class="{stt}">{t("st_" + stt)}</td></tr>')
         out += (f"<h2>{t('grp_' + g)}</h2><table class='st' dir='{_dir()}' width='100%' cellspacing='0'>"
