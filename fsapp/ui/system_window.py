@@ -4,7 +4,9 @@ import sys
 import traceback
 
 from PySide6.QtCore import QMarginsF, QSettings, QSizeF, Qt
-from PySide6.QtGui import QAction, QColor, QFont, QPageLayout, QPageSize, QPdfWriter, QTextDocument, QTextOption
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import (QAction, QColor, QDesktopServices, QFont, QPageLayout, QPageSize, QPdfWriter, QTextDocument,
+                           QTextOption)
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
@@ -17,6 +19,8 @@ from .. import importer
 from ..system import aging, calc, defaults, diagnose, migrate, render
 from ..system import reports as R
 from ..system.db import ACCOUNT_FIELDS, Account, CompanyDB
+from ..updater import UpdateChecker
+from ..version import BUILD
 from .dashboard_view import DashboardPage
 
 NAVY = "#12355b"
@@ -1308,9 +1312,16 @@ class SystemWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(spacer.sizePolicy().horizontalPolicy().Expanding, spacer.sizePolicy().verticalPolicy())
         tb.addWidget(spacer)
+        up = QAction("🔄 فحص التحديثات", self)
+        up.triggered.connect(lambda: self.check_updates(manual=True))
+        tb.addAction(up)
         sw = QAction("🔁 تبديل الشركة", self)
         sw.triggered.connect(self.switch_company)
         tb.addAction(sw)
+        self.updater = UpdateChecker(self)
+        self.updater.result.connect(self._update_result)
+        self.updater.failed.connect(self._update_failed)
+        self._manual_check = False
 
         central = QWidget()
         h = QHBoxLayout(central)
@@ -1334,6 +1345,7 @@ class SystemWindow(QMainWindow):
         self.setCentralWidget(central)
         self.data_changed()
         self.nav.setCurrentRow(0 if self.db.periods() else 2)
+        self.check_updates(manual=False)
 
     # -------- helpers
     def _remember(self, path):
@@ -1353,7 +1365,8 @@ class SystemWindow(QMainWindow):
 
     def data_changed(self, reload_pages=True):
         self.ctx = calc.Ctx(self.db)
-        self.setWindowTitle(f"نظام التقارير المالية — {self.ctx.company}   ({os.path.basename(self.db.path)})")
+        version = f"نسخة {BUILD}" if BUILD else "نسخة تطوير"
+        self.setWindowTitle(f"نظام التقارير المالية — {self.ctx.company}   ({os.path.basename(self.db.path)})   [{version}]")
         cur, comp = self.period.currentData(), self.comp.currentData()
         for w in (self.period, self.comp):
             w.blockSignals(True)
@@ -1381,6 +1394,34 @@ class SystemWindow(QMainWindow):
     def params_changed(self):
         self.reports_page.show_report()
         self.dashboard.load()
+
+    # -------- updates
+    def check_updates(self, manual):
+        self._manual_check = manual
+        self.updater.check()
+
+    def _update_result(self, newer, build, notes, url):
+        if not newer:
+            if self._manual_check:
+                info(self, f"عندك أحدث نسخة (رقم {BUILD})." if BUILD else
+                     f"هذه نسخة تطوير. آخر نسخة منشورة رقم {build}.")
+            return
+        box = QMessageBox(self)
+        box.setWindowTitle("نسخة جديدة متاحة")
+        box.setIcon(QMessageBox.Information)
+        box.setText(f"نسخة جديدة رقم {build} متاحة (عندك رقم {BUILD}).")
+        box.setInformativeText("الجديد:\n" + (notes[:900] or "—") +
+                               "\n\nبعد التنزيل: اقفل البرنامج، وفك الملف، واستبدل فولدر البرنامج القديم. "
+                               "ملفات الشركات (.fsdb) لا تتأثر.")
+        download = box.addButton("تنزيل الآن", QMessageBox.AcceptRole)
+        box.addButton("لاحقًا", QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() is download:
+            QDesktopServices.openUrl(QUrl(url))
+
+    def _update_failed(self, message):
+        if self._manual_check:
+            error(self, f"تعذر فحص التحديثات (تأكد من الاتصال بالإنترنت):\n{message}")
 
     def switch_company(self):
         QSettings().setValue("last_company", "")

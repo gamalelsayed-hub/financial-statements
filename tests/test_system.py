@@ -349,3 +349,13 @@ def test_dashboard_figures(company):
     assert abs(start + moves - cash) < 0.01
     assert d["wc_rows"][0][2] == ctx.bs_figures(["2026-03"], 2)["receivables"]
     assert d["alerts"] and d["reading"]
+
+
+def test_update_check_parsing():
+    from fsapp import updater
+    data = {"tag_name": "build-12", "body": "Add dashboard", "html_url": "https://example/r",
+            "assets": [{"name": "FinancialStatements-windows.zip", "browser_download_url": "https://example/z.zip"}]}
+    assert updater.parse_release(data) == (12, "Add dashboard", "https://example/z.zip")
+    assert updater.parse_release({"tag_name": "v-x"}) is None
+    assert updater.is_newer(12, current=11) and not updater.is_newer(12, current=12)
+    assert not updater.is_newer(12, current=0)  # development copies never nag

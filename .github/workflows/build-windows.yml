@@ -4,6 +4,9 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -16,9 +19,22 @@ jobs:
         run: pip install -r requirements.txt pyinstaller==6.16.0 pytest
       - name: Tests
         run: python -m pytest -q tests
+      - name: Stamp build number
+        shell: bash
+        run: sed -i "s/^BUILD = .*/BUILD = ${{ github.run_number }}/" fsapp/version.py
       - name: Build exe
         run: python -m PyInstaller --noconfirm --clean --windowed --name FinancialStatements --add-data "sample;sample" main.py
       - uses: actions/upload-artifact@v4
         with:
           name: FinancialStatements-windows
           path: dist/FinancialStatements
+      - name: Publish release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Compress-Archive -Path dist/FinancialStatements -DestinationPath FinancialStatements-windows.zip
+          git log -1 --pretty=%B | Out-File -Encoding utf8 notes.txt
+          gh release create "build-${{ github.run_number }}" FinancialStatements-windows.zip `
+            --title "نسخة رقم ${{ github.run_number }}" --notes-file notes.txt --target "${{ github.sha }}"
