@@ -14,6 +14,8 @@ INPUT_TABLES = {
     "comp": "2) ميزان مراجعة الشركة",
     "monthly": "3) حركة الحسابات الشهرية",
     "branches": "4) حركة الفروع الشهرية",
+    "suppliers": "5) الموردون",
+    "customers": "6) أعمار أرصدة العملاء",
 }
 
 
@@ -40,14 +42,14 @@ def _split(net):
     return (net, 0.0) if net >= 0 else (0.0, -net)
 
 
-def _find_table(ws, title_prefix):
+def _find_table(ws, title_prefix, header_words=("رقم", "الفرع")):
     """Row of the header line of an input table (the row after its title and description)."""
     for r in range(1, ws.max_row + 1):
         v = ws.cell(r, 1).value
         if isinstance(v, str) and v.strip().startswith(title_prefix):
             for rr in range(r + 1, r + 5):
                 h = ws.cell(rr, 1).value
-                if isinstance(h, str) and ("رقم" in h or "الفرع" in h):
+                if isinstance(h, str) and any(w in h for w in header_words):
                     return rr
     return None
 
@@ -295,5 +297,30 @@ def migrate(path, db, year=None, comp_period=None, log=print):
             db.save_branch_mov(f"{year:04d}-{m + 1:02d}", branch, rows)
             n += 1
         log(f"حركة الفروع: {n} (فرع × شهر)")
+
+    # ---------------- supplier and customer aging (saved for the current period)
+    if current_period:
+        def text(r, c):
+            v = ws.cell(r, c).value
+            return _code(v) if isinstance(v, (int, float)) else str(v or "").strip()
+
+        h = _find_table(ws, INPUT_TABLES["suppliers"])
+        if h:
+            rows = []
+            for r in _rows_until_blank(ws, h + 1, 1):
+                rows.append({"no": text(r, 1), "name": text(r, 2), "account": text(r, 3), "credit": _num(ws.cell(r, 4).value),
+                             "currency": text(r, 5), **{f"b{i}": _num(ws.cell(r, 6 + i).value) for i in range(5)}})
+            db.save_aging("suppliers", current_period, rows)
+            log(f"أعمار الموردين: {len(rows)} مورد")
+        h = _find_table(ws, INPUT_TABLES["customers"], ("المنطقة", "رقم", "الفرع"))
+        if h:
+            rows = []
+            for r in _rows_until_blank(ws, h + 1, 4):
+                rows.append({"region": text(r, 1), "branch": text(r, 2), "rep": text(r, 3).strip(), "no": text(r, 4),
+                             "name": text(r, 5), "cls": text(r, 6), "ctype": text(r, 7),
+                             **{f"b{i}": _num(ws.cell(r, 8 + i).value) for i in range(5)},
+                             "guarantee": _num(ws.cell(r, 13).value)})
+            db.save_aging("customers", current_period, rows)
+            log(f"أعمار العملاء: {len(rows)} عميل")
     wb.close()
     return current_period

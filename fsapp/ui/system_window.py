@@ -14,9 +14,10 @@ from PySide6.QtWidgets import (
 )
 
 from .. import importer
-from ..system import calc, defaults, diagnose, migrate, render
+from ..system import aging, calc, defaults, diagnose, migrate, render
 from ..system import reports as R
 from ..system.db import ACCOUNT_FIELDS, Account, CompanyDB
+from .dashboard_view import DashboardPage
 
 NAVY = "#12355b"
 
@@ -81,7 +82,40 @@ ROLE_LABELS = {
     "code": "رقم الحساب", "name": "اسم الحساب", "branch": "الفرع",
     "od": "افتتاحي مدين", "oc": "افتتاحي دائن", "md": "حركة مدين", "mc": "حركة دائن",
     "cd": "ختامي مدين", "cc": "ختامي دائن",
+    "no": "الرقم", "aname": "الاسم", "region": "المنطقة", "rep": "المندوب", "cls": "التصنيف",
+    "ctype": "النوع (آجل / عهدة / نقدي)", "b0": "0 - 30", "b1": "31 - 60", "b2": "61 - 90", "b3": "91 - 120",
+    "b4": "أكثر من 120", "guarantee": "ضمان بنكي", "account": "رقم الحساب", "credit": "فترة الائتمان (يوم)",
+    "currency": "العملة",
 }
+
+AGING_ROLES = {
+    "customers": ["no", "aname", "region", "branch", "rep", "cls", "ctype", "b0", "b1", "b2", "b3", "b4", "guarantee"],
+    "suppliers": ["no", "aname", "account", "credit", "currency", "b0", "b1", "b2", "b3", "b4"],
+}
+AGING_WORDS = {
+    "no": ("رقم العميل", "رقم المورد", "كود العميل", "كود المورد", "الرقم", "رقم"),
+    "aname": ("اسم العميل", "اسم المورد", "الاسم", "اسم"),
+    "region": ("المنطقة",), "branch": ("الفرع",), "rep": ("المندوب", "البائع"), "cls": ("التصنيف", "تصنيف"),
+    "ctype": ("نوع العميل", "النوع", "نوع"), "b0": ("0 - 30", "0-30", "حالي"), "b1": ("31 - 60", "31-60"),
+    "b2": ("61 - 90", "61-90"), "b3": ("91 - 120", "91-120"), "b4": ("أكثر من 120", "اكثر من 120", "120+", "> 120"),
+    "guarantee": ("ضمان",), "account": ("رقم الحساب", "الحساب"), "credit": ("فترة الائتمان", "الائتمان", "مدة"),
+    "currency": ("العملة",),
+}
+
+
+def guess_aging(rows, roles):
+    for i, r in enumerate(rows[:30]):
+        cells = [str(v).strip() if v is not None else "" for v in r]
+        found = {}
+        for role in roles:
+            for w in AGING_WORDS[role]:
+                c = next((k for k, text in enumerate(cells) if text and w in text and k not in found.values()), None)
+                if c is not None:
+                    found[role] = c
+                    break
+        if len(found) >= 4:
+            return i + 1, found
+    return 0, {}
 
 
 class ColumnMapDialog(QDialog):
@@ -735,6 +769,8 @@ class DataPage(QWidget):
         lay.addWidget(h)
         bar = QHBoxLayout()
         for text, fn in (("📥 رفع ميزان شهر", self.import_tb), ("📥 رفع حركة فروع لشهر", self.import_branches),
+                         ("📥 أعمار العملاء لشهر", lambda: self.import_aging("customers")),
+                         ("📥 أعمار الموردين لشهر", lambda: self.import_aging("suppliers")),
                          ("🗑 حذف بيانات الشهر المحدد", self.delete_period)):
             b = QPushButton(text)
             b.setMinimumHeight(34)
@@ -742,9 +778,10 @@ class DataPage(QWidget):
             bar.addWidget(b)
         bar.addStretch()
         lay.addLayout(bar)
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels(["الشهر", "عدد حسابات الميزان", "توازن الافتتاحي", "توازن الحركة",
-                                              "توازن الختامي", "حسابات غير مربوطة", "الفروع المدخلة"])
+                                              "توازن الختامي", "حسابات غير مربوطة", "الفروع المدخلة",
+                                              "أعمار العملاء", "أعمار الموردين"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.Stretch)
@@ -761,7 +798,8 @@ class DataPage(QWidget):
         branch_info = {}
         for p, b, n in db.branch_periods():
             branch_info.setdefault(p, []).append(b)
-        periods = sorted(set(db.periods()) | set(branch_info), reverse=True)
+        cust_p, supp_p = set(db.aging_periods("customers")), set(db.aging_periods("suppliers"))
+        periods = sorted(set(db.periods()) | set(branch_info) | cust_p | supp_p, reverse=True)
         self.table.setRowCount(len(periods))
         for r, p in enumerate(periods):
             tb = db.tb(p)
@@ -780,6 +818,8 @@ class DataPage(QWidget):
                 it.setForeground(QColor("#b42318"))
             self.table.setItem(r, 5, it)
             self.table.setItem(r, 6, ro_item("، ".join(branch_info.get(p, [])) or "—"))
+            self.table.setItem(r, 7, ro_item(f"{len(db.aging('customers', p))} عميل" if p in cust_p else "—"))
+            self.table.setItem(r, 8, ro_item(f"{len(db.aging('suppliers', p))} مورد" if p in supp_p else "—"))
 
     def _default_month(self):
         ps = self.win.db.periods()
@@ -928,6 +968,69 @@ class DataPage(QWidget):
         unknown = [b for b in groups if b not in [x for x, _ in db.branch_rows()]]
         if unknown:
             msg += "\n• فروع جديدة أضيفت للإعدادات: " + "، ".join(unknown)
+        self.log.appendPlainText(msg)
+        self.win.data_changed()
+        info(self, msg)
+
+    def import_aging(self, table):
+        title = "أعمار العملاء" if table == "customers" else "أعمار الموردين"
+        dlg = MonthDialog(self, f"{title} لأي شهر؟", self.win.current_period() or self._default_month())
+        if dlg.exec() != QDialog.Accepted:
+            return
+        period = dlg.period()
+        start = QSettings().value("last_dir", os.path.expanduser("~"))
+        path, _ = QFileDialog.getOpenFileName(self, f"ملف {title}", start, "Excel / CSV (*.xlsx *.xlsm *.csv *.txt)")
+        if not path:
+            return
+        rows = self._read(path)
+        if rows is None:
+            return
+        roles = AGING_ROLES[table]
+        first, mapping = guess_aging(rows, roles)
+        help_text = ("حدد عمود كل بيان. المتأخر يُحسب تلقائيًا: العهدة أكثر من 30 يوم، وغيرها أكثر من 60 يوم."
+                     if table == "customers" else
+                     "حدد عمود كل بيان. المتجاوز يُحسب من فترة الائتمان، ويُحوّل بسعر الصرف من الإعدادات.")
+        cm = ColumnMapDialog(self, rows, roles, first, mapping, help_text)
+        if cm.exec() != QDialog.Accepted:
+            return
+        m = cm.mapping()
+        if "no" not in m and "aname" not in m:
+            error(self, "لازم تحدد عمود الرقم أو الاسم.")
+            return
+        out = []
+        for r in rows[cm.first_row():]:
+            rec = {}
+            for role, col in m.items():
+                v = r[col] if col < len(r) else None
+                key = "name" if role == "aname" else role
+                if role in ("b0", "b1", "b2", "b3", "b4", "guarantee", "credit"):
+                    rec[key] = importer.to_number(v) or 0.0
+                else:
+                    if isinstance(v, float) and v.is_integer():
+                        v = int(v)
+                    rec[key] = "" if v is None else str(v).strip()
+            if not rec.get("no") and not rec.get("name"):
+                continue
+            low = (rec.get("name") or "").replace("إ", "ا").replace("أ", "ا")
+            if not rec.get("no") and ("الاجمالي" in low or "اجمالي" in low or "total" in low.lower()):
+                continue
+            for b in ("b0", "b1", "b2", "b3", "b4"):
+                rec.setdefault(b, 0.0)
+            out.append(rec)
+        if period in self.win.db.aging_periods(table) and QMessageBox.question(
+                self, "تأكيد", f"يوجد {title} محفوظة لشهر {calc.month_label(period)}. استبدالها؟") != QMessageBox.Yes:
+            return
+        self.win.db.save_aging(table, period, out)
+        if table == "customers":
+            s_ = aging.customers_summary(out)
+            msg = (f"تم حفظ {title} لشهر {calc.month_label(period)}: {s_['count']} عميل، الرصيد {s_['total']:,.0f}، "
+                   f"المتأخر {s_['overdue']:,.0f} ({s_['need_count']} عميل مطلوب منهم مطابقة).")
+        else:
+            s_ = aging.suppliers_summary(out, aging.rates(self.win.db), self.win.ctx.base_currency)
+            msg = (f"تم حفظ {title} لشهر {calc.month_label(period)}: {s_['count']} مورد، الإجمالي {s_['total']:,.0f}، "
+                   f"المتجاوز لفترة الائتمان {s_['overdue']:,.0f}.")
+            if s_["no_rate"]:
+                msg += f"\n⚠ {s_['no_rate']} مورد بعملة بدون سعر صرف — أضف السعر في الإعدادات."
         self.log.appendPlainText(msg)
         self.win.data_changed()
         info(self, msg)
@@ -1217,9 +1320,11 @@ class SystemWindow(QMainWindow):
             f"QListWidget {{ background:{NAVY}; color:white; font-size:11pt; border:none; }}"
             "QListWidget::item { padding:13px 10px; } QListWidget::item:selected { background:#1d6fb8; }")
         self.stack = QStackedWidget()
-        self.pages = [("📈 التقارير", ReportsPage(self)), ("🗓 البيانات الشهرية", DataPage(self)),
-                      ("🔗 ربط الحسابات", MappingPage(self)), ("📋 البنود", ListsPage(self)),
-                      ("⚙ الإعدادات", SettingsPage(self))]
+        self.reports_page = ReportsPage(self)
+        self.dashboard = DashboardPage(self)
+        self.pages = [("📊 لوحة التحكم", self.dashboard), ("📈 التقارير", self.reports_page),
+                      ("🗓 البيانات الشهرية", DataPage(self)), ("🔗 ربط الحسابات", MappingPage(self)),
+                      ("📋 البنود", ListsPage(self)), ("⚙ الإعدادات", SettingsPage(self))]
         for title, page in self.pages:
             self.nav.addItem(title)
             self.stack.addWidget(page)
@@ -1228,7 +1333,7 @@ class SystemWindow(QMainWindow):
         h.addWidget(self.stack, 1)
         self.setCentralWidget(central)
         self.data_changed()
-        self.nav.setCurrentRow(0 if self.db.periods() else 1)
+        self.nav.setCurrentRow(0 if self.db.periods() else 2)
 
     # -------- helpers
     def _remember(self, path):
@@ -1270,10 +1375,12 @@ class SystemWindow(QMainWindow):
             for _, page in self.pages:
                 page.load()
         else:
-            self.pages[0][1].load()
+            self.reports_page.load()
+            self.dashboard.load()
 
     def params_changed(self):
-        self.pages[0][1].show_report()
+        self.reports_page.show_report()
+        self.dashboard.load()
 
     def switch_company(self):
         QSettings().setValue("last_company", "")
@@ -1286,7 +1393,10 @@ class SystemWindow(QMainWindow):
         if not params:
             info(self, "لا توجد بيانات بعد.")
             return
-        rp = self.pages[0][1]
+        rp = self.reports_page
+        if self.stack.currentWidget() is self.dashboard and not everything:
+            (self.dashboard.export_excel if fmt == "xlsx" else self.dashboard.export_pdf)()
+            return
         if everything:
             reps = []
             for key, _, _ in R.ALL_REPORTS:

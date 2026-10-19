@@ -75,7 +75,15 @@ class Ctx:
         self.alert_pct = db.setting_float("alert_pct")
         self.alert_amount = db.setting_float("alert_amount")
         self.admin_label = db.setting("admin_label") or "الإدارة والمستودع المركزي"
+        self.base_currency = (db.currencies()[0][0] if db.currencies() else "SAR").upper()
         self._bal_cache = {}
+        self._aging = {}
+
+    def aging(self, table, period):
+        key = (table, period)
+        if key not in self._aging:
+            self._aging[key] = self.db.aging(table, period)
+        return self._aging[key]
 
     # -------- account helpers
     def section(self, code):
@@ -153,6 +161,8 @@ class Ctx:
         f["pbt"] = f["op"] + sec["NONOP"]
         f["ni"] = f["pbt"] + sec["ZAKAT"]
         f["finance_cost"] = -sum(v for i, v in val.items() if self.fs_role.get(i) == "finance_cost")
+        cos = [v for i, v in val.items() if self.fs_role.get(i) == "cost_of_sales"]
+        f["cost_of_sales"] = -sum(cos) if cos else f["cogs"]
         return f
 
     def is_rows(self):
@@ -213,6 +223,17 @@ class Ctx:
         f["equity"] = f["sec"]["EQ"]
         for role in ("cash", "receivables", "inventory", "transit", "payables", "debt"):
             f[role] = sum(v for i, v in val.items() if self.fs_role.get(i) == role)
+        # short facilities / long loans follow the cash-flow grouping of the accounts (like the Excel dashboard)
+        st = lt = 0.0
+        for code, v in self.bal(months).items():
+            a = self.accounts.get(code)
+            if not a or self.fs_role.get(a.fs_item) != "debt":
+                continue
+            if self.cf_bucket.get(a.cf_item) == "st_fin":
+                st -= v[idx]
+            else:
+                lt -= v[idx]
+        f["debt_st"], f["debt_lt"] = st, lt
         return f
 
     def bs_rows(self):

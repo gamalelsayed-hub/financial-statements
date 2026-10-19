@@ -20,7 +20,18 @@ CREATE TABLE IF NOT EXISTS tb(
     PRIMARY KEY(period, code));
 CREATE TABLE IF NOT EXISTS branch_mov(
     period TEXT, branch TEXT, code TEXT, name TEXT, amount REAL, PRIMARY KEY(period, branch, code));
+CREATE TABLE IF NOT EXISTS customers(
+    id INTEGER PRIMARY KEY, period TEXT, no TEXT, name TEXT, region TEXT, branch TEXT, rep TEXT, cls TEXT,
+    ctype TEXT, b0 REAL, b1 REAL, b2 REAL, b3 REAL, b4 REAL, guarantee REAL);
+CREATE INDEX IF NOT EXISTS customers_period ON customers(period);
+CREATE TABLE IF NOT EXISTS suppliers(
+    id INTEGER PRIMARY KEY, period TEXT, no TEXT, name TEXT, account TEXT, credit REAL, currency TEXT,
+    b0 REAL, b1 REAL, b2 REAL, b3 REAL, b4 REAL);
+CREATE INDEX IF NOT EXISTS suppliers_period ON suppliers(period);
 """
+
+CUSTOMER_FIELDS = ["no", "name", "region", "branch", "rep", "cls", "ctype", "b0", "b1", "b2", "b3", "b4", "guarantee"]
+SUPPLIER_FIELDS = ["no", "name", "account", "credit", "currency", "b0", "b1", "b2", "b3", "b4"]
 
 LISTS = {
     # table: (columns after name, account column that references it)
@@ -177,9 +188,27 @@ class CompanyDB:
         return self.ensure_accounts([(r[0], r[1]) for r in rows])
 
     def delete_period(self, period):
-        self.con.execute("DELETE FROM tb WHERE period=?", (period,))
-        self.con.execute("DELETE FROM branch_mov WHERE period=?", (period,))
+        for table in ("tb", "branch_mov", "customers", "suppliers"):
+            self.con.execute(f"DELETE FROM {table} WHERE period=?", (period,))
         self.con.commit()
+
+    # ---------------- customer / supplier aging
+    def save_aging(self, table, period, rows):
+        """table: customers | suppliers. rows: dicts with the table fields. Replaces the period."""
+        fields = CUSTOMER_FIELDS if table == "customers" else SUPPLIER_FIELDS
+        self.con.execute(f"DELETE FROM {table} WHERE period=?", (period,))
+        self.con.executemany(
+            f"INSERT INTO {table}(period, {', '.join(fields)}) VALUES({','.join('?' * (len(fields) + 1))})",
+            [(period,) + tuple(r.get(f) for f in fields) for r in rows])
+        self.con.commit()
+
+    def aging(self, table, period):
+        fields = CUSTOMER_FIELDS if table == "customers" else SUPPLIER_FIELDS
+        cur = self.con.execute(f"SELECT {', '.join(fields)} FROM {table} WHERE period=? ORDER BY id", (period,))
+        return [dict(zip(fields, r)) for r in cur]
+
+    def aging_periods(self, table):
+        return [r[0] for r in self.con.execute(f"SELECT DISTINCT period FROM {table} ORDER BY period")]
 
     # ---------------- branch movements
     def branch_periods(self):

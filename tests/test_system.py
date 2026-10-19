@@ -294,3 +294,58 @@ def test_keyword_suggestions_for_a_new_company(tmp_path):
     accounts = db.accounts()
     a, _ = D.suggest(accounts, sections, pm, "1210202", "مجمع اهلاك مباني")
     assert a.fs_item == "مجمع إهلاك الأصول الثابتة"
+
+
+# ---------------------------------------------------------------- aging and dashboard
+from fsapp.system import aging as AG  # noqa: E402
+from fsapp.system import dashboard  # noqa: E402
+
+
+def test_overdue_rules():
+    custody = {"ctype": "عهدة", "b0": 100, "b1": 50, "b2": 30, "b3": 0, "b4": 20}
+    credit = dict(custody, ctype="آجل")
+    assert AG.customer_overdue(custody) == 100   # over 30 days
+    assert AG.customer_overdue(credit) == 50     # over 60 days
+    base = {"b0": 10, "b1": 20, "b2": 30, "b3": 40, "b4": 50}
+    assert AG.supplier_overdue(dict(base, credit=0)) == 140
+    assert AG.supplier_overdue(dict(base, credit=60)) == 120
+    assert AG.supplier_overdue(dict(base, credit=120)) == 50
+    assert AG.supplier_overdue(dict(base, credit=180)) == 0
+
+
+def test_aging_reports_and_checks(company):
+    db = company
+    db.save_aging("customers", "2026-03", [
+        {"no": "1", "name": "عميل أ", "branch": "الفرع أ", "rep": "مندوب", "ctype": "آجل", "b0": 30000, "b1": 20000,
+         "b2": 15000, "b3": 0, "b4": 0},
+        {"no": "1", "name": "عميل مكرر الرقم", "branch": "الفرع ب", "rep": "مندوب", "ctype": "عهدة", "b0": 5000,
+         "b1": 5000, "b2": 0, "b3": 0, "b4": 0}])
+    db.save_currencies([("SAR", 1), ("USD", 3.75)])
+    db.save_aging("suppliers", "2026-03", [
+        {"no": "9", "name": "مورد محلي", "credit": 30, "currency": "SAR", "b0": 10000, "b1": 6000, "b2": 0, "b3": 0, "b4": 0},
+        {"no": "10", "name": "مورد خارجي", "credit": 60, "currency": "USD", "b0": 1000, "b1": 0, "b2": 400, "b3": 0, "b4": 0}])
+    ctx = Ctx(db)
+    assert len(ctx.aging("customers", "2026-03")) == 2   # duplicate numbers are kept
+    p = R.Params(end="2026-03")
+    cust = R.build("customers", ctx, p)
+    total_row = next(r for b in cust.blocks if isinstance(b, R.Table) for r in b.rows if r.label == "الإجمالي")
+    assert total_row.values[1] == 75000 and total_row.values[3] == 15000 + 5000
+    supp = R.build("suppliers", ctx, p)
+    tot = next(r for b in supp.blocks if isinstance(b, R.Table) for r in b.rows if r.kind == "tot")
+    assert tot.values[5] == 16000 + 1400 * 3.75 and tot.values[6] == 6000 + 400 * 3.75
+    names = {c[0] for c in R.run_checks(ctx, p)}
+    assert "تقرير أعمار العملاء = الميزان" in names and "تقرير أعمار الموردين = الميزان" in names
+
+
+def test_dashboard_figures(company):
+    ctx = Ctx(company)
+    d = dashboard.compute(ctx, "2026-03")
+    assert d["cards"]["profit"][0][1] == ctx.is_figures(["2026-03"])["net_sales"]
+    cash = ctx.bs_figures(["2026-03"], 2)["cash"]
+    assert abs(d["cards"]["cash"][0][1] - cash) < 0.01
+    assert len(d["charts"]["months"]) == 12 and d["charts"]["profit"][0][1][3] is None
+    moves = sum(v for _, v in d["charts"]["cash_moves"])
+    start = ctx.bs_figures(["2026-01"], 0)["cash"]
+    assert abs(start + moves - cash) < 0.01
+    assert d["wc_rows"][0][2] == ctx.bs_figures(["2026-03"], 2)["receivables"]
+    assert d["alerts"] and d["reading"]

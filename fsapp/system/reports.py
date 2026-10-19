@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 from .calc import (Ctx, MONTHS_AR, month_add, month_label, months_range, range_label, safe_div)
 from .defaults import BUCKET_NAMES, BS_SECTIONS, IS_SECTIONS
+from . import aging as AG
 from . import diagnose as D
 
 
@@ -420,6 +421,15 @@ def run_checks(ctx: Ctx, p: Params):
                 if not a or a.branch_cat not in ctx.cat_kind:
                     bunm.add(code)
     add("حسابات في حركة الفروع بلا فئة", len(bunm), 0, "في الربط أعطِ الحساب فئة دخل الفروع", True)
+    cust = ctx.aging("customers", end)
+    if cust:
+        add("تقرير أعمار العملاء = الميزان", bs["receivables"] - AG.customers_summary(cust)["total"], 1,
+            "فرق توقيت أو عملاء خارج التقرير — يُشرح")
+    supp = ctx.aging("suppliers", end)
+    if supp:
+        ss = AG.suppliers_summary(supp, AG.rates(ctx.db), ctx.base_currency)
+        add("تقرير أعمار الموردين = الميزان", bs["payables"] - ss["total"], 1, "عملات أجنبية أو موردون خارج التقرير")
+        add("موردون بعملة بدون سعر صرف", ss["no_rate"], 0, "أضف سعر العملة في الإعدادات", True)
     return out
 
 
@@ -745,6 +755,118 @@ def rpt_m_branch(ctx, p):
                   [Table(_monthly_headers(months), rows)])
 
 
+
+# ================================================================== customers & suppliers
+def _cust_group_rows(rows, key, total_all):
+    groups = {}
+    for r in rows:
+        groups.setdefault((r.get(key) or "—").strip() or "—", []).append(r)
+    out = []
+    for g, rs in sorted(groups.items(), key=lambda kv: -sum(AG.customer_total(r) for r in kv[1])):
+        tot = sum(AG.customer_total(r) for r in rs)
+        od = sum(AG.customer_overdue(r) for r in rs)
+        out.append(Row(g, [len(rs), tot, tot - od, od, safe_div(od, tot),
+                           sum(AG.customer_total(r) for r in rs if AG.is_credit(r.get("ctype"))),
+                           sum(AG.customer_total(r) for r in rs if AG.is_custody(r.get("ctype"))),
+                           sum(AG.n(r.get("guarantee")) for r in rs), safe_div(tot, total_all)]))
+    return out
+
+
+CUST_COLS = ["عدد العملاء", "الرصيد", "ضمن المدة (غير متأخر)", "المتأخر", "نسبة المتأخر", "آجل", "عهدة",
+             "ضمانات بنكية", "% من الإجمالي"]
+CUST_FMTS = ["d", "n", "n", "n", "%", "n", "n", "n", "%"]
+
+
+def rpt_customers(ctx: Ctx, p: Params):
+    rows = ctx.aging("customers", p.end)
+    if not rows:
+        return Report("customers", "تحليل أرصدة العملاء", month_label(p.end),
+                      [Para("لا توجد بيانات أعمار عملاء لهذا الشهر — ارفعها من شاشة «البيانات الشهرية».", "warn")])
+    s = AG.customers_summary(rows)
+    tb_rec = ctx.bs_figures([p.end], 2)["receivables"] if ctx.has(p.end) else None
+    by_branch = _cust_group_rows(rows, "branch", s["total"])
+    by_branch.append(Row("الإجمالي", [s["count"], s["total"], s["total"] - s["overdue"], s["overdue"],
+                                      safe_div(s["overdue"], s["total"]),
+                                      sum(AG.customer_total(r) for r in rows if AG.is_credit(r.get("ctype"))),
+                                      sum(AG.customer_total(r) for r in rows if AG.is_custody(r.get("ctype"))),
+                                      sum(AG.n(r.get("guarantee")) for r in rows), 1.0], "tot"))
+    if tb_rec is not None:
+        by_branch.append(Row("رصيد العملاء في الميزان", [None, tb_rec], "note"))
+        by_branch.append(Row("الفرق بين الميزان وتقرير الأعمار", [None, tb_rec - s["total"]], "note"))
+    buckets = [sum(AG.n(r[b]) for r in rows) for b in AG.BUCKETS]
+    dist = Table(["الفترة"] + AG.BUCKET_NAMES + ["الإجمالي"],
+                 [Row("المبلغ", buckets + [sum(buckets)]),
+                  Row("النسبة", [safe_div(b, sum(buckets)) for b in buckets] + [1.0], fmt="%")],
+                 title="توزيع الأعمار")
+    top = sorted(rows, key=lambda r: -AG.customer_overdue(r))[:20]
+    top_rows = [Row(r["name"] or "", [r["no"], r.get("branch") or "", r.get("rep") or "", r.get("ctype") or "",
+                                      AG.customer_total(r), AG.customer_overdue(r), AG.n(r["b4"])])
+                for r in top if AG.customer_overdue(r) > 0.005]
+    blocks = [
+        Para(f"عملاء مطلوب منهم مطابقة شهرية: {s['need_count']} عميل بمتأخر {s['need_amount']:,.0f}. "
+             "المتأخر: العهدة أكثر من 30 يوم، وغيرها أكثر من 60 يوم.", "warn" if s["need_count"] else "good"),
+        dist,
+        Table(["الفرع"] + CUST_COLS, by_branch, CUST_FMTS, title="حسب الفرع"),
+        Table(["المندوب"] + CUST_COLS, _cust_group_rows(rows, "rep", s["total"]), CUST_FMTS, title="حسب المندوب"),
+        Table(["اسم العميل", "رقم العميل", "الفرع", "المندوب", "النوع", "الرصيد", "المتأخر", "أكثر من 120"], top_rows,
+              ["t", "t", "t", "t", "n", "n", "n"], title="أعلى 20 عميلًا في الرصيد المتأخر"),
+    ]
+    return Report("customers", "تحليل أرصدة العملاء", f"في نهاية {month_label(p.end)}", blocks)
+
+
+def rpt_suppliers(ctx: Ctx, p: Params):
+    rows = ctx.aging("suppliers", p.end)
+    if not rows:
+        return Report("suppliers", "تحليل أرصدة الموردين", month_label(p.end),
+                      [Para("لا توجد بيانات أعمار موردين لهذا الشهر — ارفعها من شاشة «البيانات الشهرية».", "warn")])
+    rate_map = AG.rates(ctx.db)
+    base = ctx.base_currency
+    s = AG.suppliers_summary(rows, rate_map, base)
+    by_cur = {}
+    for r in rows:
+        by_cur.setdefault((r.get("currency") or base).strip().upper() or base, []).append(r)
+    trows = []
+    tot_b = [0.0] * 5
+    for cur, rs in by_cur.items():
+        rate = rate_map.get(cur)
+        b = [sum(AG.n(r[x]) for r in rs) for x in AG.BUCKETS]
+        tot = sum(b)
+        od = sum(AG.supplier_overdue(r) for r in rs)
+        if rate is not None:
+            tot_b = [t + v * rate for t, v in zip(tot_b, b)]
+        trows.append(Row(cur, b + [tot, od, safe_div(od, tot), rate,
+                                   None if rate is None else tot * rate, None if rate is None else od * rate]))
+    trows.append(Row(f"الإجمالي ({base})", tot_b + [s["total"], s["overdue"], safe_div(s["overdue"], s["total"]),
+                                                   None, s["total"], s["overdue"]], "tot"))
+    tb_pay = ctx.bs_figures([p.end], 2)["payables"] if ctx.has(p.end) else None
+    if tb_pay is not None:
+        trows.append(Row("رصيد الموردين في الميزان", [None] * 9 + [tb_pay], "note"))
+        trows.append(Row("الفرق بين الميزان وتقرير الأعمار", [None] * 9 + [tb_pay - s["total"]], "note"))
+    over = []
+    for r in rows:
+        rate = AG.supplier_rate(r, rate_map, base)
+        if rate is None:
+            continue
+        o = AG.supplier_overdue(r) * rate
+        if o > 0.005:
+            over.append((o, r, rate))
+    over.sort(key=lambda x: -x[0])
+    top_rows = [Row(r["name"] or "", [r["no"], r.get("currency") or base, AG.n(r.get("credit")),
+                                      AG.supplier_total(r) * rate, o, AG.n(r["b4"]) * rate])
+                for o, r, rate in over[:15]]
+    blocks = [
+        Para(f"المتجاوز لفترة الائتمان: {s['overdue']:,.0f} {base} لدى {s['over_count']} مورد."
+             + (f" ⚠ {s['no_rate']} مورد بعملة بدون سعر صرف — أضف السعر في الإعدادات." if s["no_rate"] else ""),
+             "warn" if s["overdue"] > 0.5 or s["no_rate"] else "good"),
+        Table(["العملة"] + AG.BUCKET_NAMES + ["الإجمالي", "المتجاوز لفترة الائتمان", "نسبة المتجاوز", "سعر الصرف",
+                                              f"الإجمالي ({base})", f"المتجاوز ({base})"], trows,
+              ["n", "n", "n", "n", "n", "n", "n", "%", "x", "n", "n"], title="حسب العملة"),
+        Table(["اسم المورد", "رقم المورد", "العملة", "فترة الائتمان (يوم)", f"الإجمالي ({base})",
+               f"المتجاوز ({base})", f"أكثر من 120 ({base})"], top_rows, ["t", "t", "d", "n", "n", "n"],
+              title="أعلى 15 موردًا في المتجاوز لفترة الائتمان"),
+    ]
+    return Report("suppliers", "تحليل أرصدة الموردين", f"في نهاية {month_label(p.end)}", blocks)
+
 # ================================================================== registry
 PERIOD_REPORTS = [
     ("summary", "الملخص التنفيذي", rpt_summary),
@@ -758,6 +880,8 @@ PERIOD_REPORTS = [
     ("branch_exp", "تحليل مصروفات فرع", rpt_branch_exp),
     ("exp", "تحليل المصروفات بين فترتين", rpt_exp),
     ("ratios", "النسب المالية", rpt_ratios),
+    ("customers", "تحليل أرصدة العملاء", rpt_customers),
+    ("suppliers", "تحليل أرصدة الموردين", rpt_suppliers),
 ]
 MONTHLY_REPORTS = [
     ("m_is", "قائمة الدخل الشهرية", rpt_m_is),
