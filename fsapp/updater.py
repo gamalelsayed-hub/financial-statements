@@ -1,9 +1,17 @@
-"""Checks GitHub for a newer release of the program."""
+"""Checks GitHub for a newer release of the program.
+
+Uses Python's HTTPS client with the certifi certificate bundle shipped inside the program, so the check
+does not depend on the Windows certificate store (Qt's network stack failed there with
+"issuer certificate ... could not be found").
+"""
 import json
 import re
+import ssl
+import threading
+import urllib.error
+import urllib.request
 
-from PySide6.QtCore import QObject, QUrl, Signal
-from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
+from PySide6.QtCore import QObject, Signal
 
 from .version import BUILD, REPO
 
@@ -25,35 +33,50 @@ def is_newer(latest_build, current=BUILD):
     return current > 0 and latest_build > current
 
 
+def ssl_contexts():
+    """The bundled certifi roots first, then the system store (needed behind company proxies that
+    inspect HTTPS with their own root certificate installed in Windows)."""
+    out = []
+    try:
+        import certifi
+        out.append(ssl.create_default_context(cafile=certifi.where()))
+    except ImportError:
+        pass
+    out.append(ssl.create_default_context())
+    return out
+
+
+def fetch_latest(timeout=10):
+    req = urllib.request.Request(API, headers={"Accept": "application/vnd.github+json",
+                                               "User-Agent": "FinancialStatements"})
+    last = None
+    for ctx in ssl_contexts():
+        try:
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.URLError as e:
+            if not isinstance(getattr(e, "reason", None), ssl.SSLError):
+                raise
+            last = e
+    raise last
+
+
 class UpdateChecker(QObject):
-    """result(newer: bool, build: int, notes: str, url: str) — or failed(message)."""
+    """result(newer: bool, build: int, notes: str, url: str) — or failed(message). Runs in a background thread."""
     result = Signal(bool, int, str, str)
     failed = Signal(str)
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.net = QNetworkAccessManager(self)
-        self.net.finished.connect(self._done)
-
     def check(self):
-        req = QNetworkRequest(QUrl(API))
-        req.setRawHeader(b"Accept", b"application/vnd.github+json")
-        req.setRawHeader(b"User-Agent", b"FinancialStatements")
-        req.setTransferTimeout(10000)
-        self.net.get(req)
+        threading.Thread(target=self._run, daemon=True).start()
 
-    def _done(self, reply):
+    def _run(self):
         try:
-            if reply.error() != QNetworkReply.NoError:
-                self.failed.emit(reply.errorString())
-                return
-            info = parse_release(json.loads(bytes(reply.readAll()).decode("utf-8")))
-            if not info:
-                self.failed.emit("لا توجد إصدارات منشورة بعد.")
-                return
-            build, notes, url = info
-            self.result.emit(is_newer(build), build, notes, url)
-        except (ValueError, KeyError) as e:
+            info = parse_release(fetch_latest())
+        except Exception as e:  # noqa: BLE001 - reported to the user on a manual check
             self.failed.emit(str(e))
-        finally:
-            reply.deleteLater()
+            return
+        if not info:
+            self.failed.emit("لا توجد إصدارات منشورة بعد.")
+            return
+        build, notes, url = info
+        self.result.emit(is_newer(build), build, notes, url)
