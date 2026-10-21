@@ -64,3 +64,24 @@ def test_exports(company, tmp_path):  # noqa: F811
     page = DX.to_html(dr, ctx, opts)
     assert "قائمة المركز المالي كما في 31/3/2026" in page and "إيضاحات قائمة الدخل" in page
     assert page.index("إيضاحات قائمة الدخل") < page.index("إيضاحات قائمة المركز المالي")
+
+
+def test_owners_current_account_with_debit_balance_moves_to_related_parties(company):  # noqa: F811
+    from fsapp.system.db import Account
+    tbs = company.all_tb()
+    for p, rows in tbs.items():
+        rows = dict(rows)
+        rows["3301"] = ("جاري الملاك", 10000, 0, 0, 0, 10000, 0)           # debit balance
+        n, od, oc, md, mc, cd, cc = rows["3101"]
+        rows["3101"] = (n, od, oc + 10000, md, mc, cd, cc + 10000)       # keeps the trial balance balanced
+        company.save_tb(p, [(code, *v) for code, v in rows.items()])
+    company.save_accounts([Account("3301", "جاري الملاك", fs_item="جاري الملاك", cf_item="جاري الملاك")])
+    ctx = Ctx(company)
+    dr = DR.build(ctx, "2026-03")
+    assert dr.cur.bs["rp_from"] == 10000 and dr.cur.bs["owners"] == 0
+    assert dr.cur.accounts_bs["rp_from"] == {"3301": 10000}
+    assert abs(DR.bs_totals(dr.cur.bs)["diff"]) < 0.01 and abs(dr.cf_cur["diff"]) < 0.01
+    # option off → stays in equity, negative
+    company.set_setting("draft_alt", '{"جاري الملاك": ""}')
+    dr = DR.build(Ctx(company), "2026-03")
+    assert dr.cur.bs["owners"] == -10000 and dr.cur.bs["rp_from"] == 0

@@ -149,8 +149,34 @@ def load_map(ctx):
     return out
 
 
-def save_map(db, mapping):
+def save_map(db, mapping, alt=None):
     db.set_setting("draft_map", json.dumps(mapping, ensure_ascii=False))
+    if alt is not None:
+        db.set_setting("draft_alt", json.dumps(alt, ensure_ascii=False))
+
+
+def side(line):
+    return "A" if BS_SECTION[line] in ASSET_SECTIONS else "L"
+
+
+def load_alt(ctx, mapping=None):
+    """{fs_item: line used when the item's balance is reversed} — e.g. owners' current account with a debit balance
+    → due from related parties. Default: owners' current account → due from related parties."""
+    mapping = mapping or load_map(ctx)
+    try:
+        saved = json.loads(ctx.db.setting("draft_alt", "{}") or "{}")
+    except ValueError:
+        saved = {}
+    out = {}
+    for item, line in mapping.items():
+        if line not in BS_LABEL:
+            continue
+        if item in saved:
+            alt = saved[item]
+            out[item] = alt if alt in BS_LABEL and side(alt) != side(line) else ""
+        else:
+            out[item] = "rp_from" if line == "owners" else ""
+    return out
 
 
 # ------------------------------------------------------------------ figures
@@ -168,15 +194,22 @@ class Column:
     accounts_bs: dict = field(default_factory=dict)   # line → {code: value}
     accounts_is: dict = field(default_factory=dict)
     acc_dep: float = 0.0          # accumulated depreciation (negative)
+    moved: dict = field(default_factory=dict)          # items shown on their alternative line in this column
     dep_exp: float = None         # depreciation expense of the period (income statement), for the cash flow add-back
 
 
-def _bs_column(ctx, mapping, months, idx, label, end_key):
+def _bs_column(ctx, mapping, months, idx, label, end_key, alt=None):
     f = ctx.bs_figures(months, idx)
     col = Column(label, end_key, bs={k: 0.0 for k, *_ in BS_LINES}, profit=f["profit"], plug=f["plug"])
+    alt = alt or {}
+    # items whose balance is reversed in this column move to their alternative line (other side, sign flipped)
+    moved = {item: alt[item] for item, v in f["items"].items() if alt.get(item) and v < -0.5}
+    col.moved = moved
     for item, v in f["items"].items():
         line = mapping.get(item)
-        if line in col.bs:
+        if item in moved:
+            col.bs[moved[item]] += -v
+        elif line in col.bs:
             col.bs[line] += v
     col.bs["retained"] += f["profit"] + f["plug"]
     for code, vals in ctx.bal(months).items():
@@ -184,7 +217,10 @@ def _bs_column(ctx, mapping, months, idx, label, end_key):
         if not a or a.fs_item not in mapping or ctx.fs_section.get(a.fs_item) not in BS_SECTIONS:
             continue
         sign = 1 if ctx.fs_section[a.fs_item] in ASSET_SECTIONS else -1
-        col.accounts_bs.setdefault(mapping[a.fs_item], {})[code] = vals[idx] * sign
+        if a.fs_item in moved:
+            col.accounts_bs.setdefault(moved[a.fs_item], {})[code] = -vals[idx] * sign
+        else:
+            col.accounts_bs.setdefault(mapping[a.fs_item], {})[code] = vals[idx] * sign
     # accumulated depreciation (credit balance) for the cash flow add-back
     col.acc_dep = sum(v for item, v in f["items"].items()
                       if mapping.get(item) == "ppe" and _has(item, "مجمع") and _has(item, "إهلاك", "اهلاك", "استهلاك"))
@@ -274,13 +310,14 @@ class Draft:
 
 def build(ctx, end):
     mapping = load_map(ctx)
+    alt = load_alt(ctx, mapping)
     ytd = ctx.ytd_months(end)
     first, prev_end = ytd[0], month_add(ytd[0], -1)
-    cur = _bs_column(ctx, mapping, [end], 2, end, end)
+    cur = _bs_column(ctx, mapping, [end], 2, end, end, alt)
     cur.is_, cur.ni, cur.accounts_is, cur.dep_exp = _is_values(ctx, mapping, end)
-    year_open = _bs_column(ctx, mapping, [first], 0, first, "open:" + first) if ctx.has(first) else None
+    year_open = _bs_column(ctx, mapping, [first], 0, first, "open:" + first, alt) if ctx.has(first) else None
     if ctx.has(prev_end):
-        comp = _bs_column(ctx, mapping, [prev_end], 2, prev_end, prev_end)
+        comp = _bs_column(ctx, mapping, [prev_end], 2, prev_end, prev_end, alt)
         comp.is_, comp.ni, comp.accounts_is, comp.dep_exp = _is_values(ctx, mapping, prev_end)
     elif year_open:
         comp = year_open            # opening balances of the year = closing of the previous year
@@ -293,11 +330,11 @@ def build(ctx, end):
     if comp is not None and comp.is_ is not None:
         pfirst = ctx.ytd_months(prev_end)[0]
         if ctx.has(pfirst):
-            cf_comp = cash_flow(_bs_column(ctx, mapping, [pfirst], 0, pfirst, "open:" + pfirst), comp, comp.ni)
+            cf_comp = cash_flow(_bs_column(ctx, mapping, [pfirst], 0, pfirst, "open:" + pfirst, alt), comp, comp.ni)
         else:
             # only the year-end trial balance: its opening columns are the start of the year when it was extracted
             # for the whole year (1/1 → 31/12)
-            cf_comp = cash_flow(_bs_column(ctx, mapping, [prev_end], 0, pfirst, "open:" + pfirst), comp, comp.ni)
+            cf_comp = cash_flow(_bs_column(ctx, mapping, [prev_end], 0, pfirst, "open:" + pfirst, alt), comp, comp.ni)
             cf_comp_note = ("ℹ مقارنة التدفقات النقدية محسوبة من الرصيد الافتتاحي في ميزان نهاية السنة السابقة — "
                             "صحيحة إذا كان الميزان مستخرجًا عن السنة كاملة (من 1/1 إلى 31/12)")
 

@@ -31,12 +31,14 @@ class MappingDialog(QDialog):
         note.setWordWrap(True)
         lay.addWidget(note)
         mapping = DR.load_map(ctx)
+        alt = DR.load_alt(ctx, mapping)
         bs, is_ = ctx.bs_figures([end], 2)["items"], ctx.is_figures([end], ytd=True)["items"]
         items = [i for i in ctx.fs_order if i in mapping]
-        self.table = QTableWidget(len(items), 4)
-        self.table.setHorizontalHeaderLabels(["بند البرنامج", "القسم", "الرصيد", "بند المسودة"])
+        self.table = QTableWidget(len(items), 5)
+        self.table.setHorizontalHeaderLabels(["بند البرنامج", "القسم", "الرصيد", "بند المسودة",
+                                              "إذا انعكس الرصيد (سالب) يظهر في"])
         self.table.verticalHeader().setVisible(False)
-        self.combos = {}
+        self.combos, self.alts = {}, {}
         for r, item in enumerate(items):
             sec = ctx.fs_section.get(item, "")
             value = bs.get(item, is_.get(item, 0.0))
@@ -53,8 +55,15 @@ class MappingDialog(QDialog):
             cb.setCurrentIndex(max(0, cb.findData(mapping[item])))
             self.table.setCellWidget(r, 3, cb)
             self.combos[item] = cb
+            if sec in BS_SECTIONS:
+                ab = QComboBox()
+                self.alts[item] = ab
+                cb.currentIndexChanged.connect(lambda _=None, i=item: self._fill_alt(i))
+                self._fill_alt(item, alt.get(item, ""))
+                self.table.setCellWidget(r, 4, ab)
         self.table.resizeColumnsToContents()
-        self.table.setColumnWidth(3, 300)
+        self.table.setColumnWidth(3, 280)
+        self.table.setColumnWidth(4, 260)
         lay.addWidget(self.table, 1)
         row = QHBoxLayout()
         b = QPushButton("↩ الرجوع للربط الافتراضي")
@@ -69,13 +78,30 @@ class MappingDialog(QDialog):
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
 
+    def _fill_alt(self, item, current=None):
+        """Lines on the other side of the statement (an asset line for a liability/equity line and the reverse)."""
+        ab, line = self.alts[item], self.combos[item].currentData()
+        current = ab.currentData() if current is None else current
+        ab.blockSignals(True)
+        ab.clear()
+        ab.addItem("— يبقى مكانه", "")
+        for key, label, *_ in DR.BS_LINES:
+            if DR.side(key) != DR.side(line):
+                ab.addItem(label, key)
+        ab.setCurrentIndex(max(0, ab.findData(current)))
+        ab.blockSignals(False)
+
     def reset(self):
         for item, cb in self.combos.items():
             sec = self.ctx.fs_section.get(item, "")
-            cb.setCurrentIndex(max(0, cb.findData(DR.default_line(item, sec, self.ctx.fs_role.get(item, "")))))
+            line = DR.default_line(item, sec, self.ctx.fs_role.get(item, ""))
+            cb.setCurrentIndex(max(0, cb.findData(line)))
+            if item in self.alts:
+                self._fill_alt(item, "rp_from" if line == "owners" else "")
 
     def save(self):
-        DR.save_map(self.ctx.db, {item: cb.currentData() for item, cb in self.combos.items()})
+        DR.save_map(self.ctx.db, {item: cb.currentData() for item, cb in self.combos.items()},
+                    {item: ab.currentData() or "" for item, ab in self.alts.items()})
         self.accept()
 
 
