@@ -1310,6 +1310,10 @@ class SystemWindow(QMainWindow):
             a = QAction(text, self)
             a.triggered.connect(fn)
             tb.addAction(a)
+        tb.addSeparator()
+        draft = QAction("📑 مسودة القوائم المالية", self)
+        draft.triggered.connect(self.open_draft)
+        tb.addAction(draft)
         spacer = QWidget()
         spacer.setSizePolicy(spacer.sizePolicy().horizontalPolicy().Expanding, spacer.sizePolicy().verticalPolicy())
         tb.addWidget(spacer)
@@ -1432,6 +1436,13 @@ class SystemWindow(QMainWindow):
         QSettings().setValue("last_company", "")
         self.close()
         launch()
+
+    def open_draft(self):
+        if not self.current_period():
+            info(self, "لا توجد بيانات بعد — ارفع ميزان شهر أولًا.")
+            return
+        from .draft_dialog import DraftDialog
+        DraftDialog(self).exec()
 
     # -------- export
     def export(self, fmt, everything):
