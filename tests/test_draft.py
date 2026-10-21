@@ -48,6 +48,8 @@ def test_comparative_year_when_its_trial_balance_exists(company):  # noqa: F811
     assert abs(DR.is_totals(dr.comp.is_)["ni"] - dr.comp.ni) < 0.01
     assert abs(dr.cf_cur["diff"]) < 0.01
     assert DR.date_label(dr.comp.end) == "28/2/2026"
+    # only the year-end trial balance of the previous year: cash flow comparative from its opening columns
+    assert dr.cf_comp is not None and abs(dr.cf_comp["diff"]) < 0.01
 
 
 def test_exports(company, tmp_path):  # noqa: F811

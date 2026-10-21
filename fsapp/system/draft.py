@@ -289,10 +289,17 @@ def build(ctx, end):
     open_for_cf = year_open or comp
     cf_cur = cash_flow(open_for_cf, cur, cur.ni) if open_for_cf else None
     cf_comp = None
+    cf_comp_note = ""
     if comp is not None and comp.is_ is not None:
         pfirst = ctx.ytd_months(prev_end)[0]
         if ctx.has(pfirst):
             cf_comp = cash_flow(_bs_column(ctx, mapping, [pfirst], 0, pfirst, "open:" + pfirst), comp, comp.ni)
+        else:
+            # only the year-end trial balance: its opening columns are the start of the year when it was extracted
+            # for the whole year (1/1 → 31/12)
+            cf_comp = cash_flow(_bs_column(ctx, mapping, [prev_end], 0, pfirst, "open:" + pfirst), comp, comp.ni)
+            cf_comp_note = ("ℹ مقارنة التدفقات النقدية محسوبة من الرصيد الافتتاحي في ميزان نهاية السنة السابقة — "
+                            "صحيحة إذا كان الميزان مستخرجًا عن السنة كاملة (من 1/1 إلى 31/12)")
 
     checks = []
     for col, name in ((cur, "الفترة الحالية"), (comp, "المقارنة")):
@@ -313,6 +320,8 @@ def build(ctx, end):
     if unmapped:
         checks.append(f"⚠ {len(unmapped)} حساب له رصيد وغير مربوط ببند (يظهر ضمن الأرباح المبقاة): "
                       + "، ".join(unmapped[:8]) + (" ..." if len(unmapped) > 8 else ""))
+    if cf_comp_note:
+        checks.append(cf_comp_note)
     if comp is None:
         checks.append("ℹ لا يوجد ميزان للسنة السابقة ولا أرصدة افتتاحية — عمود المقارنة فارغ")
     elif comp.is_ is None:
