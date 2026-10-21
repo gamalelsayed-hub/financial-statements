@@ -2,3 +2,5 @@
 # 0 means a development copy (it never reports itself as outdated).
 BUILD = 0
 REPO = "gamalelsayed-hub/financial-statements"
+# public repository with the downloads only (the code repository can be private)
+RELEASES_REPO = "gamalelsayed-hub/financial-statements-releases"
