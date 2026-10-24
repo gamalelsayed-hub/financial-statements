@@ -316,9 +316,11 @@ def build(ctx, end):
     cur = _bs_column(ctx, mapping, [end], 2, end, end, alt)
     cur.is_, cur.ni, cur.accounts_is, cur.dep_exp = _is_values(ctx, mapping, end)
     year_open = _bs_column(ctx, mapping, [first], 0, first, "open:" + first, alt) if ctx.has(first) else None
-    if ctx.has(prev_end):
-        comp = _bs_column(ctx, mapping, [prev_end], 2, prev_end, prev_end, alt)
-        comp.is_, comp.ni, comp.accounts_is, comp.dep_exp = _is_values(ctx, mapping, prev_end)
+    # comparative: the previous year-end month, or the uploaded full-year trial balance of the previous year
+    cctx = ctx if ctx.has(prev_end) else ctx.annual_view(prev_end) if prev_end in ctx.annual else None
+    if cctx is not None:
+        comp = _bs_column(cctx, mapping, [prev_end], 2, prev_end, prev_end, alt)
+        comp.is_, comp.ni, comp.accounts_is, comp.dep_exp = _is_values(cctx, mapping, prev_end)
     elif year_open:
         comp = year_open            # opening balances of the year = closing of the previous year
     else:
@@ -329,12 +331,12 @@ def build(ctx, end):
     cf_comp_note = ""
     if comp is not None and comp.is_ is not None:
         pfirst = ctx.ytd_months(prev_end)[0]
-        if ctx.has(pfirst):
-            cf_comp = cash_flow(_bs_column(ctx, mapping, [pfirst], 0, pfirst, "open:" + pfirst, alt), comp, comp.ni)
+        if cctx.has(pfirst):
+            cf_comp = cash_flow(_bs_column(cctx, mapping, [pfirst], 0, pfirst, "open:" + pfirst, alt), comp, comp.ni)
         else:
             # only the year-end trial balance: its opening columns are the start of the year when it was extracted
             # for the whole year (1/1 → 31/12)
-            cf_comp = cash_flow(_bs_column(ctx, mapping, [prev_end], 0, pfirst, "open:" + pfirst, alt), comp, comp.ni)
+            cf_comp = cash_flow(_bs_column(cctx, mapping, [prev_end], 0, pfirst, "open:" + pfirst, alt), comp, comp.ni)
             cf_comp_note = ("ℹ مقارنة التدفقات النقدية محسوبة من الرصيد الافتتاحي في ميزان نهاية السنة السابقة — "
                             "صحيحة إذا كان الميزان مستخرجًا عن السنة كاملة (من 1/1 إلى 31/12)")
 

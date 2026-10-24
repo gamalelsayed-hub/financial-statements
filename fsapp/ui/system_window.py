@@ -16,13 +16,14 @@ from PySide6.QtWidgets import (
 )
 
 from .. import importer
-from ..system import aging, calc, defaults, diagnose, migrate, render
+from ..system import aging, calc, defaults, diagnose, items, migrate, render
 from ..system import reports as R
 from ..system.db import ACCOUNT_FIELDS, Account, CompanyDB
 from ..updater import UpdateChecker
 from ..version import BUILD
 from .aging_view import AgingPage
 from .dashboard_view import DashboardPage
+from .items_view import ItemsPage
 from . import zoom
 from .table_tools import freeze
 from .zoom import pt
@@ -94,6 +95,8 @@ ROLE_LABELS = {
     "ctype": "النوع (آجل / عهدة / نقدي)", "b0": "0 - 30", "b1": "31 - 60", "b2": "61 - 90", "b3": "91 - 120",
     "b4": "أكثر من 120", "guarantee": "ضمان بنكي", "account": "رقم الحساب", "credit": "فترة الائتمان (يوم)",
     "currency": "العملة",
+    "supp_no": "رقم المورد", "supp_name": "اسم المورد", "item_code": "رقم الصنف", "item_name": "اسم الصنف",
+    "unit": "الوحدة", "qty": "الكمية", "net": "صافي المبلغ",
 }
 
 AGING_ROLES = {
@@ -663,6 +666,8 @@ class MappingPage(QWidget):
                     show = bool(self.table.item(r, 10).data(Qt.UserRole)) or any(
                         self.table.item(r, c).background().color().alpha() > 0 for c in (4, 5, 6, 7))
             self.table.setRowHidden(r, not show)
+        if getattr(self.table, "_frozen", None):
+            self.table._frozen.refresh()
 
     def selected_rows(self):
         return sorted({i.row() for i in self.table.selectedIndexes() if not self.table.isRowHidden(i.row())})
@@ -776,39 +781,67 @@ class DataPage(QWidget):
         h.setWordWrap(True)
         h.setStyleSheet("padding:6px; background:#eef4fb; border-radius:6px;")
         lay.addWidget(h)
-        bar = QHBoxLayout()
-        for text, fn in (("📥 رفع ميزان شهر", self.import_tb), ("📥 رفع حركة فروع لشهر", self.import_branches),
+        for buttons in ((("📥 رفع ميزان شهر", self.import_tb), ("📥 رفع حركة فروع لشهر", self.import_branches),
                          ("📥 أعمار العملاء لشهر", lambda: self.import_aging("customers")),
                          ("📥 أعمار الموردين لشهر", lambda: self.import_aging("suppliers")),
-                         ("🗑 حذف بيانات الشهر المحدد", self.delete_period)):
-            b = QPushButton(text)
-            b.setMinimumHeight(34)
-            b.clicked.connect(fn)
-            bar.addWidget(b)
-        bar.addStretch()
-        lay.addLayout(bar)
-        self.table = QTableWidget(0, 9)
+                         ("🗑 حذف بيانات الشهر المحدد", self.delete_period)),
+                        (("📥 مبيعات الأصناف لشهر", self.import_item_sales),
+                         ("📥 مشتريات الأصناف لشهر", self.import_item_purchases),
+                         ("📥 ميزان سنة كاملة (للمقارنات السنوية)", self.import_annual))):
+            bar = QHBoxLayout()
+            for text, fn in buttons:
+                b = QPushButton(text)
+                b.setMinimumHeight(34)
+                b.clicked.connect(fn)
+                bar.addWidget(b)
+            bar.addStretch()
+            lay.addLayout(bar)
+        self.table = QTableWidget(0, 11)
         self.table.setHorizontalHeaderLabels(["الشهر", "عدد حسابات الميزان", "توازن الافتتاحي", "توازن الحركة",
                                               "توازن الختامي", "حسابات غير مربوطة", "الفروع المدخلة",
-                                              "أعمار العملاء", "أعمار الموردين"])
+                                              "أعمار العملاء", "أعمار الموردين", "مبيعات الأصناف",
+                                              "مشتريات الأصناف"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
         lay.addWidget(self.table, 1)
+        box = QGroupBox("السنوات الكاملة المرفوعة (للمقارنات السنوية) — السنة التي لها 12 شهرًا أعلاه تُحسب تلقائيًا")
+        bv = QHBoxLayout(box)
+        self.years = QTableWidget(0, 3)
+        self.years.setHorizontalHeaderLabels(["السنة", "ميزان الشركة", "حركة الفروع"])
+        self.years.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.years.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.years.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.years.verticalHeader().setVisible(False)
+        self.years.setMaximumHeight(130)
+        bv.addWidget(self.years, 1)
+        b = QPushButton("🗑 حذف السنة المحددة")
+        b.clicked.connect(self.delete_annual)
+        bv.addWidget(b, 0, Qt.AlignTop)
+        lay.addWidget(box)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMaximumHeight(140)
+        self.log.setMaximumHeight(120)
         lay.addWidget(self.log)
 
     def load(self):
         db = self.win.db
+        ctx = self.win.ctx
+        ann = db.annual_periods()
+        self.years.setRowCount(len(ann))
+        for r, (k, (n, branches)) in enumerate(sorted(ann.items(), reverse=True)):
+            self.years.setItem(r, 0, ro_item(ctx.year_label(k) if ctx else k))
+            self.years.item(r, 0).setData(Qt.UserRole, k)
+            self.years.setItem(r, 1, ro_item(f"{n} حساب" if n else "—"))
+            self.years.setItem(r, 2, ro_item("، ".join(branches) or "—"))
+        items_p = db.item_periods()
         accounts = db.accounts()
         branch_info = {}
         for p, b, n in db.branch_periods():
             branch_info.setdefault(p, []).append(b)
         cust_p, supp_p = set(db.aging_periods("customers")), set(db.aging_periods("suppliers"))
-        periods = sorted(set(db.periods()) | set(branch_info) | cust_p | supp_p, reverse=True)
+        periods = sorted(set(db.periods()) | set(branch_info) | cust_p | supp_p | set(items_p), reverse=True)
         self.table.setRowCount(len(periods))
         for r, p in enumerate(periods):
             tb = db.tb(p)
@@ -829,6 +862,9 @@ class DataPage(QWidget):
             self.table.setItem(r, 6, ro_item("، ".join(branch_info.get(p, [])) or "—"))
             self.table.setItem(r, 7, ro_item(f"{len(db.aging('customers', p))} عميل" if p in cust_p else "—"))
             self.table.setItem(r, 8, ro_item(f"{len(db.aging('suppliers', p))} مورد" if p in supp_p else "—"))
+            n_s, has_cost, n_p = items_p.get(p, (0, False, 0))
+            self.table.setItem(r, 9, ro_item((f"{n_s} سطر" + (" + التكلفة" if has_cost else "")) if n_s else "—"))
+            self.table.setItem(r, 10, ro_item(f"{n_p} سطر" if n_p else "—"))
 
     def _default_month(self):
         ps = self.win.db.periods()
@@ -845,11 +881,15 @@ class DataPage(QWidget):
             error(self, f"تعذر قراءة الملف:\n{e}")
             return None
 
-    def import_tb(self):
-        dlg = MonthDialog(self, "ميزان أي شهر؟", self._default_month())
-        if dlg.exec() != QDialog.Accepted:
-            return
-        period = dlg.period()
+    def import_tb(self, annual_key=None):
+        if annual_key:
+            period = annual_key
+        else:
+            dlg = MonthDialog(self, "ميزان أي شهر؟", self._default_month())
+            if dlg.exec() != QDialog.Accepted:
+                return
+            period = dlg.period()
+        label = self.win.ctx.year_label(period) if annual_key else calc.month_label(period)
         start = QSettings().value("last_dir", os.path.expanduser("~"))
         path, _ = QFileDialog.getOpenFileName(self, "ملف ميزان المراجعة", start, "Excel / CSV (*.xlsx *.xlsm *.csv *.txt)")
         if not path:
@@ -874,11 +914,13 @@ class DataPage(QWidget):
                 f"يوجد {len(parents)} حساب رئيسي (رقمه بداية لأرقام حسابات أخرى) وأرصدته غالبًا إجمالي للفرعية.\n"
                 "استبعادها من الميزان؟") == QMessageBox.Yes:
             accounts = [a for a in accounts if a.code not in parents]
-        if period in self.win.db.periods() and QMessageBox.question(
-                self, "تأكيد", f"يوجد ميزان محفوظ لشهر {calc.month_label(period)}. استبداله؟") != QMessageBox.Yes:
+        exists = period in (self.win.db.annual_periods() if annual_key else self.win.db.periods())
+        if exists and QMessageBox.question(
+                self, "تأكيد", f"يوجد ميزان محفوظ لـ {label}. استبداله؟") != QMessageBox.Yes:
             return
-        new = self.win.db.save_tb(period, [(a.code, a.name, a.od, a.oc, a.md, a.mc, a.cd, a.cc) for a in accounts])
-        msg = [f"تم حفظ ميزان {calc.month_label(period)}: {len(accounts)} حساب."]
+        data = [(a.code, a.name, a.od, a.oc, a.md, a.mc, a.cd, a.cc) for a in accounts]
+        new = self.win.db.save_annual_tb(period, data) if annual_key else self.win.db.save_tb(period, data)
+        msg = [f"تم حفظ ميزان {label}: {len(accounts)} حساب."]
         hints = diagnose.tb_imbalance_hints(
             {a.code: (a.name, a.od, a.oc, a.md, a.mc, a.cd, a.cc) for a in accounts})
         for h_ in hints[:15]:
@@ -893,14 +935,15 @@ class DataPage(QWidget):
         self.win.data_changed()
         info(self, "\n".join(msg))
 
-    def import_branches(self):
+    def import_branches(self, annual_key=None):
         db = self.win.db
         dlg = QDialog(self)
-        dlg.setWindowTitle("رفع حركة فروع")
+        dlg.setWindowTitle("رفع حركة فروع" + (f" — {self.win.ctx.year_label(annual_key)}" if annual_key else ""))
         f = QFormLayout(dlg)
         md = MonthDialog(self, "", self.win.current_period() or self._default_month())
-        f.addRow("السنة:", md.year)
-        f.addRow("الشهر:", md.month)
+        if not annual_key:
+            f.addRow("السنة:", md.year)
+            f.addRow("الشهر:", md.month)
         r1 = QRadioButton("ملف لفرع واحد")
         r2 = QRadioButton("ملف واحد فيه كل الفروع (عمود للفرع)")
         r1.setChecked(True)
@@ -924,7 +967,8 @@ class DataPage(QWidget):
         f.addRow(bb)
         if dlg.exec() != QDialog.Accepted:
             return
-        period = md.period()
+        period = annual_key or md.period()
+        label = self.win.ctx.year_label(period) if annual_key else f"شهر {calc.month_label(period)}"
         multi = r2.isChecked()
         bname = branch.currentText().strip()
         if not multi and not bname:
@@ -969,9 +1013,10 @@ class DataPage(QWidget):
         for b, brows in groups.items():
             accs = importer.build_accounts(brows, 0, m)
             data = [(a.code, a.name, a.mov_net) for a in accs if abs(a.mov_net) > 0.004]
-            total_new += len(db.save_branch_mov(period, b, data))
+            save = db.save_annual_branch if annual_key else db.save_branch_mov
+            total_new += len(save(period, b, data))
             report.append(f"{b}: {len(data)} حساب")
-        msg = f"تم حفظ حركة الفروع لشهر {calc.month_label(period)}:\n" + "\n".join(report)
+        msg = f"تم حفظ حركة الفروع لـ {label}:\n" + "\n".join(report)
         if total_new:
             msg += f"\n• {total_new} حساب جديد أضيف لشاشة الربط ويحتاج ربط."
         unknown = [b for b in groups if b not in [x for x, _ in db.branch_rows()]]
@@ -1049,9 +1094,169 @@ class DataPage(QWidget):
         if r < 0:
             return
         p = self.table.item(r, 0).data(Qt.UserRole)
-        if QMessageBox.question(self, "تأكيد", f"حذف ميزان وحركة فروع شهر {calc.month_label(p)}؟") == QMessageBox.Yes:
+        if QMessageBox.question(self, "تأكيد", f"حذف كل بيانات شهر {calc.month_label(p)} (الميزان، حركة الفروع، "
+                                "الأعمار، ومبيعات ومشتريات الأصناف)؟") == QMessageBox.Yes:
             self.win.db.delete_period(p)
             self.win.data_changed()
+
+    def delete_annual(self):
+        r = self.years.currentRow()
+        if r < 0:
+            return
+        k = self.years.item(r, 0).data(Qt.UserRole)
+        if QMessageBox.question(self, "تأكيد", f"حذف ميزان وحركة فروع {self.years.item(r, 0).text()}؟") == QMessageBox.Yes:
+            self.win.db.delete_annual(k)
+            self.win.data_changed()
+
+    # -------- item sales / purchases
+    def _open(self, title, filters="Excel / CSV (*.xlsx *.xlsm *.csv *.txt)"):
+        start = QSettings().value("last_dir", os.path.expanduser("~"))
+        path, _ = QFileDialog.getOpenFileName(self, title, start, filters)
+        if path:
+            QSettings().setValue("last_dir", os.path.dirname(path))
+        return path
+
+    def import_item_sales(self):
+        dlg = MonthDialog(self, "مبيعات الأصناف لأي شهر؟", self.win.current_period() or self._default_month())
+        if dlg.exec() != QDialog.Accepted:
+            return
+        period = dlg.period()
+        path = self._open("ملف مبيعات الأصناف بالعميل (الكميات أو المبيعات والتكلفة)")
+        if not path:
+            return
+        rows = self._read(path)
+        if rows is None:
+            return
+        fmt = items.sales_format(rows)
+        if fmt is None:
+            error(self, "لم أتعرف على الملف. المطلوب أحد التقريرين:\n"
+                        "• مبيعات الأصناف بالعميل: رقم العميل، رقم الصنف، الكمية، المبلغ، المردود، الصافي\n"
+                        "• مبيعات الأصناف بالعميل بالتكلفة: رقم الصنف، الصافي، التكلفة، اسم العميل")
+            return
+        try:
+            new = items.parse_sales_qty(rows) if fmt == "qty" else items.parse_sales_cost(rows)
+        except Exception as e:  # noqa: BLE001
+            error(self, f"تعذر قراءة الملف:\n{e}")
+            return
+        if not new:
+            error(self, "الملف لا يحتوي على أسطر مبيعات.")
+            return
+        db = self.win.db
+        existing = db.item_sales([period])
+        had = any((r["net"] if fmt == "qty" else r["cost"]) is not None for r in existing)
+        kind = "الكميات والمبيعات" if fmt == "qty" else "المبيعات بالتكلفة"
+        if had and QMessageBox.question(self, "تأكيد", f"يوجد ملف «{kind}» محفوظ لشهر {calc.month_label(period)}. "
+                                        "استبداله؟") != QMessageBox.Yes:
+            return
+        merged = items.merge_sales(existing, new, fmt)
+        db.save_item_sales(period, merged)
+        total = sum((r["net"] if fmt == "qty" else r["cnet"]) or 0 for r in new)
+        known = items.customer_info(db)
+        unknown = len({r["cust_code"] for r in new if r["cust_code"] not in known})
+        item_list = db.items()
+        no_item = len({r["item_code"] for r in new if r["item_code"] not in item_list})
+        msg = [f"تم حفظ «{kind}» لشهر {calc.month_label(period)}: {len(new)} سطر، الصافي {total:,.0f}."]
+        if fmt == "cost":
+            cost = sum(r["cost"] or 0 for r in new)
+            msg.append(f"التكلفة {cost:,.0f} — مجمل الربح {total - cost:,.0f} ({(total - cost) / total:.1%})." if total else "")
+        if unknown:
+            msg.append(f"• {unknown} عميل غير موجود في «بيانات العملاء» — مندوبه وفرعه غير محدد.")
+        if no_item:
+            msg.append(f"• {no_item} صنف غير موجود في قائمة الأصناف — يظهر «غير مصنف».")
+        other = "المبيعات بالتكلفة" if fmt == "qty" else "الكميات والمبيعات"
+        msg.append(f"ℹ يمكن رفع ملف «{other}» لنفس الشهر وسيندمج معه حسب العميل والصنف.")
+        text_ = "\n".join(m for m in msg if m)
+        self.log.appendPlainText(text_)
+        self.win.data_changed()
+        info(self, text_)
+
+    def import_item_purchases(self):
+        path = self._open("تقرير المشتريات حسب الموردين والأصناف (PDF أو Excel)",
+                          "PDF / Excel / CSV (*.pdf *.xlsx *.xlsm *.csv *.txt)")
+        if not path:
+            return
+        guess = self.win.current_period() or self._default_month()
+        if path.lower().endswith(".pdf"):
+            try:
+                last, rows = items.parse_purchases_pdf(path)
+            except Exception as e:  # noqa: BLE001
+                error(self, f"تعذر قراءة ملف الـ PDF:\n{e}")
+                return
+            if last:
+                guess = f"{last.year:04d}-{last.month:02d}"
+        else:
+            table = self._read(path)
+            if table is None:
+                return
+            first, mapping = items.guess_purchase_cols(table)
+            cm = ColumnMapDialog(self, table, list(items.PURCHASE_WORDS), first, mapping,
+                                 "حدد الأعمدة. رقم المورد يحدد نوعه: 1 محلي، 2 خارجي (بعملته)، غيره خدمات وأخرى.")
+            if cm.exec() != QDialog.Accepted:
+                return
+            m = cm.mapping()
+            if "item_code" not in m or "net" not in m:
+                error(self, "لازم تحدد رقم الصنف والمبلغ.")
+                return
+            rows = items.read_purchases(table, cm.first_row(), m)
+        if not rows:
+            error(self, "لم أجد أسطر مشتريات في الملف.")
+            return
+        dlg = MonthDialog(self, "مشتريات أي شهر؟", guess)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        period = dlg.period()
+        db = self.win.db
+        if db.item_periods().get(period, [0, 0, 0])[2] and QMessageBox.question(
+                self, "تأكيد", f"توجد مشتريات أصناف محفوظة لشهر {calc.month_label(period)}. استبدالها؟") != QMessageBox.Yes:
+            return
+        db.save_item_purchases(period, rows)
+        rates, base = aging.rates(db), self.win.ctx.base_currency
+        by = {}
+        for r in rows:
+            t = aging.supplier_type(r["supp_no"])
+            by[t] = by.get(t, 0.0) + items.purchase_base(r, rates, base)
+        no_rate = {(r["currency"] or base).upper() for r in rows} - {base, *rates}
+        msg = (f"تم حفظ مشتريات الأصناف لشهر {calc.month_label(period)}: {len(rows)} سطر من "
+               f"{len({r['supp_no'] for r in rows})} مورد.\n" +
+               "\n".join(f"{aging.TYPE_TITLES[t]}: {by[t]:,.2f} {base}" for t in aging.SUPPLIER_TYPES if t in by))
+        if no_rate:
+            msg += "\n⚠ عملات بدون سعر صرف في الإعدادات: " + "، ".join(sorted(no_rate))
+        self.log.appendPlainText(msg)
+        self.win.data_changed()
+        info(self, msg)
+
+    # -------- full-year trial balances
+    def import_annual(self):
+        ctx = self.win.ctx
+        dlg = QDialog(self)
+        dlg.setWindowTitle("ميزان سنة كاملة")
+        f = QFormLayout(dlg)
+        year = QSpinBox()
+        year.setRange(2000, 2100)
+        last = (self.win.db.periods() or [None])[0]
+        year.setValue(int(last[:4]) - 1 if last else 2025)
+        f.addRow("السنة المالية المنتهية في:", year)
+        r1 = QRadioButton("ميزان مراجعة الشركة للسنة (افتتاحي، حركة السنة، ختامي)")
+        r2 = QRadioButton("حركة الفروع للسنة")
+        r1.setChecked(True)
+        f.addRow(r1)
+        f.addRow(r2)
+        note = QLabel("استخدم ميزان من أول السنة لآخرها (مثلًا 1/1 إلى 31/12). يُستخدم في المقارنات السنوية، "
+                      "وفي عمود المقارنة لمسودة القوائم إذا لم يكن ميزان آخر شهر في السنة السابقة مرفوعًا. "
+                      "لا يظهر ضمن الشهور ولا يؤثر على التقارير الشهرية.")
+        note.setWordWrap(True)
+        f.addRow(note)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        f.addRow(bb)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        key = ctx.year_key(year.value())
+        if r1.isChecked():
+            self.import_tb(annual_key=key)
+        else:
+            self.import_branches(annual_key=key)
 
 
 
@@ -1178,7 +1383,7 @@ class ReportsPage(QWidget):
         lv.setContentsMargins(0, 0, 0, 0)
         self.list = QListWidget()
         self.list.setStyleSheet("QListWidget::item { padding: 5px; }")
-        for title, group in (("— تقارير الفترة —", R.PERIOD_REPORTS), ("— التحليل الشهري —", R.MONTHLY_REPORTS)):
+        for title, group in R.REPORT_GROUPS:
             it = QListWidgetItem(title)
             it.setFlags(Qt.NoItemFlags)
             it.setForeground(QColor(NAVY))
@@ -1247,8 +1452,8 @@ class ReportsPage(QWidget):
         self.branch_lbl.setVisible(key in R.NEEDS_BRANCH)
         self.view.setVisible(key in R.NEEDS_VIEW)
         self.view_lbl.setVisible(key in R.NEEDS_VIEW)
-        self.supp.setVisible(key == "suppliers")
-        self.supp_lbl.setVisible(key == "suppliers")
+        self.supp.setVisible(key in R.NEEDS_SUPP_VIEW)
+        self.supp_lbl.setVisible(key in R.NEEDS_SUPP_VIEW)
         params = self.win.params()
         if not params:
             self.browser.show_message("لا توجد بيانات بعد — ارفع ميزان شهر من شاشة «البيانات الشهرية».")
@@ -1380,7 +1585,8 @@ class SystemWindow(QMainWindow):
         self.aging_page = AgingPage(self)
         self.pages = [("📊 لوحة التحكم", self.dashboard), ("📈 التقارير", self.reports_page),
                       ("👥 العملاء والموردين", self.aging_page),
-                      ("🗓 البيانات الشهرية", DataPage(self)), ("🔗 ربط الحسابات", MappingPage(self)),
+                      ("🗓 البيانات الشهرية", DataPage(self)), ("📦 الأصناف والعملاء", ItemsPage(self)),
+                      ("🔗 ربط الحسابات", MappingPage(self)),
                       ("📋 البنود", ListsPage(self)), ("⚙ الإعدادات", SettingsPage(self))]
         for title, page in self.pages:
             self.nav.addItem(title)

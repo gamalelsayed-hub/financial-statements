@@ -1,41 +1,11 @@
 """Report builders. Every report is a list of tables, rendered to HTML (screen/PDF) and Excel."""
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .calc import (Ctx, MONTHS_AR, month_add, month_label, months_range, range_label, safe_div)
 from .defaults import BUCKET_NAMES, BS_SECTIONS, IS_SECTIONS
 from . import aging as AG
+from .blocks import Para, Report, Row, Table  # noqa: F401  (re-exported)
 from . import diagnose as D
-
-
-@dataclass
-class Row:
-    label: str
-    values: list = field(default_factory=list)
-    kind: str = "item"   # item | sub | tot | hdr | note
-    fmt: str = "n"       # n | % | x | d | t
-    styles: list = None  # optional css class per value (good / warn / bad)
-
-
-@dataclass
-class Table:
-    columns: list
-    rows: list
-    col_fmts: list = None   # per value column, overrides the row format
-    title: str = None
-
-
-@dataclass
-class Para:
-    text: str
-    cls: str = "sub"
-
-
-@dataclass
-class Report:
-    key: str
-    title: str
-    subtitle: str
-    blocks: list
 
 
 @dataclass
@@ -923,7 +893,13 @@ MONTHLY_REPORTS = [
     ("m_br_profit", "الفروع شهريًا — صافي الربح بعد التوزيع", rpt_m_br_profit),
     ("m_branch", "تحليل فرع شهريًا", rpt_m_branch),
 ]
-ALL_REPORTS = PERIOD_REPORTS + MONTHLY_REPORTS
+from .annual import ANNUAL_REPORTS  # noqa: E402
+from .item_reports import ITEM_REPORTS  # noqa: E402
+
+ALL_REPORTS = PERIOD_REPORTS + MONTHLY_REPORTS + ITEM_REPORTS + ANNUAL_REPORTS
+REPORT_GROUPS = [("— تقارير الفترة —", PERIOD_REPORTS), ("— التحليل الشهري —", MONTHLY_REPORTS),
+                 ("— تقارير الأصناف —", ITEM_REPORTS), ("— المقارنات السنوية —", ANNUAL_REPORTS)]
+NEEDS_SUPP_VIEW = {"suppliers", "it_purch"}
 NEEDS_BRANCH = {"branch_exp", "m_branch"}
 NEEDS_VIEW = {"branches"}
 

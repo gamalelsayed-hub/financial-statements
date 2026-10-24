@@ -10,6 +10,7 @@ Conventions (same as the Excel model):
   mapped to a cash-flow item (e.g. gain on sale of assets) are taken out of operating activities and
   moved to the item's activity (investing for an operating item).
 """
+import copy
 from collections import OrderedDict
 
 from .defaults import ASSET_SECTIONS, BS_SECTIONS, IS_SECTIONS, SECTION_NAMES
@@ -54,6 +55,8 @@ class Ctx:
         self.tbs = db.all_tb()
         self.bmov = db.all_branch_mov()
         self.periods = sorted(self.tbs)
+        self.annual = db.annual_tb()            # {year-end month: tb} full-year trial balances
+        self.annual_bmov = db.annual_branch()
         self.fs_section = db.list_attr("fs_items", "section")
         self.fs_role = db.list_attr("fs_items", "role")
         self.fs_order = db.list_names("fs_items")
@@ -111,6 +114,48 @@ class Ctx:
 
     def has(self, p):
         return p in self.tbs
+
+    # -------- full years (annual comparisons)
+    def year_key(self, year):
+        """Last month of the fiscal year that ends in `year`."""
+        return f"{year:04d}-12" if self.fiscal_start == 1 else f"{year:04d}-{self.fiscal_start - 1:02d}"
+
+    def year_label(self, key):
+        return key[:4] if self.fiscal_start == 1 else f"السنة المنتهية {month_label(key)}"
+
+    def annual_view(self, key):
+        """A copy of the context holding only the full-year trial balance `key` (one 'month' = the whole year)."""
+        c = copy.copy(self)
+        c.tbs = {key: self.annual[key]}
+        c.bmov = {key: self.annual_bmov.get(key, {})}
+        c.periods = [key]
+        c._bal_cache = {}
+        return c
+
+    def year_source(self, key):
+        """(context, months, source) for the fiscal year ending at key, or None.
+        12 months entered → the monthly data; else an uploaded full-year TB; else a year-end TB entered as the
+        only month of that year (its movement columns cover the whole year)."""
+        months = self.year_months(key)
+        if all(m in self.tbs for m in months):
+            return self, months, "monthly"
+        if key in self.annual:
+            return self.annual_view(key), [key], "annual"
+        if key in self.tbs and not any(m in self.tbs for m in months[:-1]):
+            if key in self.annual_bmov:          # branch movements uploaded for the full year
+                c = copy.copy(self)
+                c.bmov = {**self.bmov, key: self.annual_bmov[key]}
+                c._bal_cache = {}
+                return c, [key], "year_end"
+            return self, [key], "year_end"
+        return None
+
+    def full_years(self):
+        """Year-end keys of every fiscal year that has full-year data, oldest first."""
+        keys = set(self.annual)
+        for p in self.periods:
+            keys.add(self.year_months(p)[-1])
+        return sorted(k for k in keys if self.year_source(k))
 
     # -------- balances
     def bal(self, months):

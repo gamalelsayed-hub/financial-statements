@@ -28,10 +28,36 @@ CREATE TABLE IF NOT EXISTS suppliers(
     id INTEGER PRIMARY KEY, period TEXT, no TEXT, name TEXT, account TEXT, credit REAL, currency TEXT,
     b0 REAL, b1 REAL, b2 REAL, b3 REAL, b4 REAL);
 CREATE INDEX IF NOT EXISTS suppliers_period ON suppliers(period);
+CREATE TABLE IF NOT EXISTS customer_master(
+    code TEXT PRIMARY KEY, name TEXT, ctype TEXT DEFAULT '', rep TEXT DEFAULT '', branch TEXT DEFAULT '',
+    region TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS items(
+    code TEXT PRIMARY KEY, name TEXT, unit TEXT DEFAULT '', grp_main TEXT DEFAULT '', grp_sub1 TEXT DEFAULT '',
+    grp_sub2 TEXT DEFAULT '', main_item TEXT DEFAULT '', itype TEXT DEFAULT '', active TEXT DEFAULT '',
+    guessed INTEGER DEFAULT 0, guess_from TEXT DEFAULT '', guess_score REAL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS item_sales(
+    period TEXT, cust_code TEXT, cust_name TEXT, item_code TEXT, item_name TEXT, unit TEXT,
+    qty REAL, free_qty REAL, sales REAL, ret_qty REAL, returns REAL, net_qty REAL, net REAL,
+    cnet REAL, cost REAL, PRIMARY KEY(period, cust_code, item_code));
+CREATE TABLE IF NOT EXISTS item_purchases(
+    id INTEGER PRIMARY KEY, period TEXT, supp_no TEXT, supp_name TEXT, currency TEXT, item_code TEXT,
+    item_name TEXT, unit TEXT, qty REAL, net REAL);
+CREATE INDEX IF NOT EXISTS item_purchases_period ON item_purchases(period);
+CREATE TABLE IF NOT EXISTS annual_tb(
+    period TEXT, code TEXT, name TEXT, od REAL, oc REAL, md REAL, mc REAL, cd REAL, cc REAL,
+    PRIMARY KEY(period, code));
+CREATE TABLE IF NOT EXISTS annual_branch(
+    period TEXT, branch TEXT, code TEXT, name TEXT, amount REAL, PRIMARY KEY(period, branch, code));
 """
 
 CUSTOMER_FIELDS = ["no", "name", "region", "branch", "rep", "cls", "ctype", "b0", "b1", "b2", "b3", "b4", "guarantee"]
 SUPPLIER_FIELDS = ["no", "name", "account", "credit", "currency", "b0", "b1", "b2", "b3", "b4"]
+MASTER_FIELDS = ["code", "name", "ctype", "rep", "branch", "region"]
+ITEM_FIELDS = ["code", "name", "unit", "grp_main", "grp_sub1", "grp_sub2", "main_item", "itype", "active",
+               "guessed", "guess_from", "guess_score"]
+SALES_FIELDS = ["cust_code", "cust_name", "item_code", "item_name", "unit", "qty", "free_qty", "sales", "ret_qty",
+                "returns", "net_qty", "net", "cnet", "cost"]
+PURCHASE_FIELDS = ["supp_no", "supp_name", "currency", "item_code", "item_name", "unit", "qty", "net"]
 
 LISTS = {
     # table: (columns after name, account column that references it)
@@ -188,7 +214,7 @@ class CompanyDB:
         return self.ensure_accounts([(r[0], r[1]) for r in rows])
 
     def delete_period(self, period):
-        for table in ("tb", "branch_mov", "customers", "suppliers"):
+        for table in ("tb", "branch_mov", "customers", "suppliers", "item_sales", "item_purchases"):
             self.con.execute(f"DELETE FROM {table} WHERE period=?", (period,))
         self.con.commit()
 
@@ -235,4 +261,119 @@ class CompanyDB:
 
     def delete_branch_mov(self, period, branch):
         self.con.execute("DELETE FROM branch_mov WHERE period=? AND branch=?", (period, branch))
+        self.con.commit()
+
+    # ---------------- customer master (code → type, rep, branch, region)
+    def customer_master(self):
+        cur = self.con.execute(f"SELECT {', '.join(MASTER_FIELDS)} FROM customer_master ORDER BY code")
+        return {r[0]: dict(zip(MASTER_FIELDS, r)) for r in cur}
+
+    def save_customer_master(self, rows, replace=True):
+        """rows: dicts. replace=False updates/adds without deleting customers missing from the file."""
+        if replace:
+            self.con.execute("DELETE FROM customer_master")
+        self.con.executemany(
+            f"INSERT OR REPLACE INTO customer_master VALUES({','.join('?' * len(MASTER_FIELDS))})",
+            [tuple(r.get(f, "") or "" for f in MASTER_FIELDS) for r in rows])
+        self.con.commit()
+
+    # ---------------- items and their classification
+    def items(self):
+        cur = self.con.execute(f"SELECT {', '.join(ITEM_FIELDS)} FROM items ORDER BY code")
+        return {r[0]: dict(zip(ITEM_FIELDS, r)) for r in cur}
+
+    def save_items(self, rows):
+        self.con.execute("DELETE FROM items")
+        self.con.executemany(f"INSERT OR REPLACE INTO items VALUES({','.join('?' * len(ITEM_FIELDS))})",
+                             [tuple(r.get(f, "") for f in ITEM_FIELDS) for r in rows])
+        self.con.commit()
+
+    def update_item(self, code, **fields):
+        sets = ", ".join(f"{k}=?" for k in fields)
+        self.con.execute(f"UPDATE items SET {sets} WHERE code=?", (*fields.values(), code))
+        self.con.commit()
+
+    # ---------------- item sales / purchases (monthly)
+    def item_sales(self, periods):
+        q = ",".join("?" * len(periods))
+        cur = self.con.execute(f"SELECT period, {', '.join(SALES_FIELDS)} FROM item_sales WHERE period IN ({q})",
+                               tuple(periods))
+        return [dict(zip(["period"] + SALES_FIELDS, r)) for r in cur]
+
+    def save_item_sales(self, period, rows):
+        self.con.execute("DELETE FROM item_sales WHERE period=?", (period,))
+        self.con.executemany(
+            f"INSERT OR REPLACE INTO item_sales(period, {', '.join(SALES_FIELDS)}) "
+            f"VALUES({','.join('?' * (len(SALES_FIELDS) + 1))})",
+            [(period,) + tuple(r.get(f) for f in SALES_FIELDS) for r in rows])
+        self.con.commit()
+
+    def item_purchases(self, periods):
+        q = ",".join("?" * len(periods))
+        cur = self.con.execute(
+            f"SELECT period, {', '.join(PURCHASE_FIELDS)} FROM item_purchases WHERE period IN ({q}) ORDER BY id",
+            tuple(periods))
+        return [dict(zip(["period"] + PURCHASE_FIELDS, r)) for r in cur]
+
+    def save_item_purchases(self, period, rows):
+        self.con.execute("DELETE FROM item_purchases WHERE period=?", (period,))
+        self.con.executemany(
+            f"INSERT INTO item_purchases(period, {', '.join(PURCHASE_FIELDS)}) "
+            f"VALUES({','.join('?' * (len(PURCHASE_FIELDS) + 1))})",
+            [(period,) + tuple(r.get(f) for f in PURCHASE_FIELDS) for r in rows])
+        self.con.commit()
+
+    def item_periods(self):
+        """{period: (sales rows, has cost, purchase rows)}"""
+        out = {}
+        for p, n, c in self.con.execute(
+                "SELECT period, COUNT(*), SUM(CASE WHEN cost IS NOT NULL THEN 1 ELSE 0 END) FROM item_sales GROUP BY period"):
+            out[p] = [n, bool(c), 0]
+        for p, n in self.con.execute("SELECT period, COUNT(*) FROM item_purchases GROUP BY period"):
+            out.setdefault(p, [0, False, 0])[2] = n
+        return out
+
+    # ---------------- full-year trial balances and branch movements (key = last month of the fiscal year)
+    def annual_tb(self):
+        out = {}
+        for r in self.con.execute("SELECT period, code, name, od, oc, md, mc, cd, cc FROM annual_tb"):
+            out.setdefault(r[0], {})[r[1]] = r[2:]
+        return out
+
+    def save_annual_tb(self, period, rows):
+        c = self.con
+        c.execute("DELETE FROM annual_tb WHERE period=?", (period,))
+        c.executemany("INSERT OR REPLACE INTO annual_tb VALUES(?,?,?,?,?,?,?,?,?)", [(period,) + tuple(r) for r in rows])
+        c.commit()
+        return self.ensure_accounts([(r[0], r[1]) for r in rows])
+
+    def annual_branch(self):
+        out = {}
+        for p, b, code, amt in self.con.execute("SELECT period, branch, code, amount FROM annual_branch"):
+            out.setdefault(p, {}).setdefault(b, {})[code] = amt
+        return out
+
+    def save_annual_branch(self, period, branch, rows):
+        c = self.con
+        c.execute("DELETE FROM annual_branch WHERE period=? AND branch=?", (period, branch))
+        c.executemany("INSERT OR REPLACE INTO annual_branch VALUES(?,?,?,?,?)",
+                      [(period, branch, code, name, amt) for code, name, amt in rows])
+        c.commit()
+        if branch not in self.branches():
+            c.execute("INSERT OR IGNORE INTO branches VALUES(?,?,?)", (branch, "", 999))
+            c.commit()
+        return self.ensure_accounts([(r[0], r[1]) for r in rows])
+
+    def annual_periods(self):
+        """{period: (accounts in the company TB, [branches])}"""
+        out = {}
+        for p, n in self.con.execute("SELECT period, COUNT(*) FROM annual_tb GROUP BY period"):
+            out[p] = [n, []]
+        for p, b in self.con.execute("SELECT DISTINCT period, branch FROM annual_branch ORDER BY branch"):
+            out.setdefault(p, [0, []])[1].append(b)
+        return out
+
+    def delete_annual(self, period):
+        for table in ("annual_tb", "annual_branch"):
+            self.con.execute(f"DELETE FROM {table} WHERE period=?", (period,))
         self.con.commit()

@@ -4,7 +4,7 @@ in place when scrolling down (Qt's header already does that inside the table's o
 A second view sharing the table's model is laid over the first column (Qt's "frozen column" technique), so styles,
 selection and sorting follow the table.
 """
-from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QTableView
 from shiboken6 import isValid
 
@@ -33,15 +33,14 @@ class FrozenColumn(QObject):
         self.sync_columns()
         table.viewport().stackUnder(v)
         table.horizontalHeader().sectionResized.connect(self._col_resized)
-        table.verticalHeader().sectionResized.connect(lambda i, _o, h: v.setRowHeight(i, h))
+        table.verticalHeader().sectionResized.connect(self._row_resized)
         table.verticalScrollBar().valueChanged.connect(v.verticalScrollBar().setValue)
         v.verticalScrollBar().valueChanged.connect(table.verticalScrollBar().setValue)
         table.model().modelReset.connect(self.sync_columns)
         table.model().columnsInserted.connect(self.sync_columns)
         table.model().rowsInserted.connect(self.sync_rows)
         table.installEventFilter(self)
-        for r in range(table.rowCount()):
-            v.setRowHeight(r, table.rowHeight(r))
+        self.sync_rows()
         v.show()
         self.update_geometry()
 
@@ -61,16 +60,37 @@ class FrozenColumn(QObject):
         if not self.alive():
             return
         for r in range(self.t.rowCount()):
-            self.view.setRowHeight(r, self.t.rowHeight(r))
+            hidden = self.t.isRowHidden(r)
+            self.view.setRowHidden(r, hidden)
+            if not hidden:
+                self.view.setRowHeight(r, self.t.rowHeight(r))
+
+    def _row_resized(self, i, _old, size):
+        """Hiding a row (filters) resizes it to 0: hide it in the overlay too, a 0 height alone isn't honoured."""
+        if not self.alive():
+            return
+        hidden = self.t.isRowHidden(i)
+        self.view.setRowHidden(i, hidden)
+        if not hidden and size:
+            self.view.setRowHeight(i, size)
 
     def _col_resized(self, i, _old, size):
         if i < self.n and self.alive():
             self.view.setColumnWidth(i, size)
             self.update_geometry()
 
+    def refresh(self):
+        """Call after hiding / showing rows (filters): Qt sends no signal for that."""
+        if self.alive():
+            self.sync_rows()
+            self.view.verticalScrollBar().setValue(self.t.verticalScrollBar().value())
+            self.update_geometry()
+
     def eventFilter(self, obj, event):
         if event.type() in (QEvent.Resize, QEvent.Show, QEvent.LayoutDirectionChange):
             self.update_geometry()
+            if event.type() == QEvent.Show:       # the layout settles after the show
+                QTimer.singleShot(0, self.refresh)
         return False
 
     def update_geometry(self):
