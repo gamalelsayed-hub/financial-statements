@@ -1,4 +1,5 @@
 """Main window of the multi-company financial reporting system."""
+import calendar
 import os
 import sys
 import traceback
@@ -1117,32 +1118,59 @@ class DataPage(QWidget):
         return path
 
     def import_item_sales(self):
-        dlg = MonthDialog(self, "مبيعات الأصناف لأي شهر؟", self.win.current_period() or self._default_month())
-        if dlg.exec() != QDialog.Accepted:
-            return
-        period = dlg.period()
-        path = self._open("ملف مبيعات الأصناف بالعميل (الكميات أو المبيعات والتكلفة)")
+        path = self._open("ملف مبيعات الأصناف (بالعميل أو بالتكلفة أو حسب الصنف — Excel أو PDF)",
+                          "Excel / CSV / PDF (*.xlsx *.xlsm *.csv *.txt *.pdf)")
         if not path:
             return
-        rows = self._read(path)
-        if rows is None:
-            return
-        fmt = items.sales_format(rows)
-        if fmt is None:
-            error(self, "لم أتعرف على الملف. المطلوب أحد التقارير:\n"
-                        "• مبيعات الأصناف بالعميل: رقم العميل، رقم الصنف، الكمية، المبلغ، المردود، الصافي\n"
-                        "• مبيعات الأصناف بالعميل بالتكلفة: رقم الصنف، الصافي، التكلفة، اسم العميل\n"
-                        "• مبيعات الأصناف (بدون العميل): رقم الصنف، الوحدة، الكمية، مبلغ المبيعات")
-            return
-        parse = {"qty": items.parse_sales_qty, "cost": items.parse_sales_cost, "item": items.parse_sales_items}[fmt]
-        try:
-            new = parse(rows)
-        except Exception as e:  # noqa: BLE001
-            error(self, f"تعذر قراءة الملف:\n{e}")
-            return
+        guess = self.win.current_period() or self._default_month()
+        check_note = ""
+        if path.lower().endswith(".pdf"):
+            fmt = "qty"
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            try:
+                span, new, check = items.parse_sales_pdf(path)
+            except Exception as e:  # noqa: BLE001
+                QApplication.restoreOverrideCursor()
+                error(self, f"تعذر قراءة ملف الـ PDF:\n{e}")
+                return
+            QApplication.restoreOverrideCursor()
+            if span:
+                guess = f"{span[1].year:04d}-{span[1].month:02d}"
+                last_day = calendar.monthrange(span[1].year, span[1].month)[1]
+                if span[0].day != 1 or span[1].day != last_day or span[0].month != span[1].month:
+                    check_note += (f"\n⚠ التقرير من {span[0]:%d/%m/%Y} إلى {span[1]:%d/%m/%Y} — مو شهر كامل. "
+                                   "اطلعه من أول الشهر لآخره.")
+            if check["grand"] is not None:
+                diff = check["lines"] - check["grand"]
+                check_note += (f"\n✓ مطابق لإجمالي التقرير {check['grand']:,.2f} (شامل الضريبة)." if abs(diff) < 1 else
+                               f"\n⚠ مجموع الأسطر {check['lines']:,.2f} والإجمالي في التقرير {check['grand']:,.2f}.")
+            if check["bad"]:
+                check_note += f"\n⚠ {len(check['bad'])} عميل مجموع أصنافه لا يطابق إجماليه: " + \
+                    "، ".join(c for c, *_ in check["bad"][:8])
+        else:
+            rows = self._read(path)
+            if rows is None:
+                return
+            fmt = items.sales_format(rows)
+            if fmt is None:
+                error(self, "لم أتعرف على الملف. المطلوب أحد التقارير:\n"
+                            "• مبيعات الأصناف بالعميل (Excel أو PDF): رقم العميل، رقم الصنف، الكمية، المبلغ\n"
+                            "• مبيعات الأصناف بالعميل بالتكلفة: رقم الصنف، الصافي، التكلفة، اسم العميل\n"
+                            "• مبيعات الأصناف (بدون العميل): رقم الصنف، الوحدة، الكمية، مبلغ المبيعات")
+                return
+            parse = {"qty": items.parse_sales_qty, "cost": items.parse_sales_cost, "item": items.parse_sales_items}[fmt]
+            try:
+                new = parse(rows)
+            except Exception as e:  # noqa: BLE001
+                error(self, f"تعذر قراءة الملف:\n{e}")
+                return
         if not new:
             error(self, "الملف لا يحتوي على أسطر مبيعات.")
             return
+        dlg = MonthDialog(self, "مبيعات الأصناف لأي شهر؟", guess)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        period = dlg.period()
         db = self.win.db
         existing = db.item_sales([period])
         had = any(r["cust_code"] == items.ITEM_ONLY if fmt == "item" else
@@ -1183,7 +1211,7 @@ class DataPage(QWidget):
         else:
             other = "المبيعات بالتكلفة" if fmt == "qty" else "الكميات (بالعميل أو حسب الصنف)"
             msg.append(f"ℹ يمكن رفع ملف «{other}» لنفس الشهر وسيندمج معه.")
-        text_ = "\n".join(m for m in msg if m)
+        text_ = "\n".join(m for m in msg if m) + check_note
         self.log.appendPlainText(text_)
         self.win.data_changed()
         info(self, text_)

@@ -561,6 +561,107 @@ def _supplier_line(ws):
     return {"supp_no": no, "supp_name": _line_text(name_ws) if name_ws else "", "currency": cur}
 
 
+# item sales by customer (system PDF): numbers are right-aligned, so their right edge picks the column
+SALES_PDF_COLS = [(130, "local"), (200, "net_tax"), (260, "tax"), (320, "charges"), (395, "disc"), (450, "amount"),
+                  (520, "free"), (600, "qty")]
+
+
+SALES_CODE_RE = re.compile(r"\d{2}-\d{4,6}(\.\d+)?")      # 02-08422.12: item code with a pack suffix
+NUM_RE = re.compile(r"-?(\d[\d,]*)?\.?\d+")                # also «.5» (quantity without the leading zero)
+
+
+def _sales_pdf_col(x1):
+    return next((name for edge, name in SALES_PDF_COLS if x1 < edge), None)
+
+
+def parse_sales_pdf(path):
+    """Item sales by customer (system report «إجمالي المبيعات حسب العملاء / الأصناف»): a customer header line
+    (customer no., name, currency), then one line per item: quantity, free quantity, sales amount, discount, charges,
+    tax, net. Returns ((from date, to date) or None, rows in the by-customer quantities format, check of the lines
+    against the report's customer totals and grand total).
+    Amount = sales amount − discount (before tax)."""
+    import pdfplumber
+    out, cust, dates = {}, {"cust_code": "", "cust_name": ""}, []
+    check = {"grand": None, "lines": 0.0, "bad": []}      # the report's own totals against the lines read
+    running = 0.0
+    with pdfplumber.open(path) as pdf:
+        for page in pdf.pages:
+            lines = defaultdict(list)
+            for w in page.extract_words():
+                lines[round(w["top"] / 4)].append(w)
+            for k in sorted(lines):
+                ws = sorted(lines[k], key=lambda w: -w["x0"])
+                fixed = [fix_word(w["text"]) for w in ws]
+                joined = " ".join(fixed)
+                if not dates and "تاريخ" in joined and "من" in joined:
+                    for d in re.findall(r"\d{1,2}/\d{1,2}/\d{4}", joined):
+                        try:
+                            dates.append(datetime.datetime.strptime(d, "%d/%m/%Y").date())
+                        except ValueError:
+                            pass
+                if "العميل" in joined and "رقم" in joined:
+                    cust = _sales_customer(ws, fixed)
+                    continue
+                if "الإجمالي" in joined:
+                    totals = [num(w["text"]) for w in ws if num(w["text"]) is not None and w["x0"] < 600]
+                    if totals:
+                        if "الكلي" in joined:
+                            check["grand"] = max(totals)
+                        else:
+                            if abs(max(totals) - running) > 0.05:
+                                check["bad"].append((cust["cust_code"], max(totals), round(running, 2)))
+                            running = 0.0
+                    continue
+                code_w = next((w for w in ws if SALES_CODE_RE.fullmatch(w["text"].translate(AR_DIGITS))
+                               or (w["x0"] > 700 and re.fullmatch(r"\d{4,6}", w["text"].translate(AR_DIGITS)))), None)
+                if code_w is None or not cust["cust_code"]:
+                    continue
+                vals = defaultdict(float)
+                for w in ws:
+                    if w is code_w or w["x0"] > 600:
+                        continue
+                    n = num(w["text"])
+                    c = _sales_pdf_col(w["x1"])
+                    if n is not None and c and NUM_RE.fullmatch(w["text"].translate(AR_DIGITS)):
+                        vals[c] += n
+                name = _line_text([w for w in ws if w is not code_w and w["x0"] > 600])
+                code = code_w["text"].translate(AR_DIGITS)
+                key = (cust["cust_code"], code)
+                rec = out.setdefault(key, {**cust, "item_code": code, "item_name": name, "unit": "", "qty": 0.0,
+                                           "free_qty": 0.0, "sales": 0.0, "ret_qty": 0.0, "returns": 0.0,
+                                           "net_qty": 0.0, "net": 0.0})
+                running += vals["local"]
+                check["lines"] += vals["local"]
+                amount = vals["amount"] - vals["disc"]
+                rec["qty"] += vals["qty"]
+                rec["net_qty"] += vals["qty"]
+                rec["free_qty"] += vals["free"]
+                rec["sales"] += amount
+                rec["net"] += amount
+    span = (min(dates), max(dates)) if dates else None
+    return span, list(out.values()), check
+
+
+def _sales_customer(ws, fixed):
+    """«رقم العميل:11020014  شركة ...  العملة:SAR» (words right to left)."""
+    code, name_ws, started = "", [], False
+    for t, w in zip(fixed, ws):
+        if "العميل" in t:
+            m = re.search(r"\d{4,}", t)
+            code = m.group(0) if m else code
+            started = True
+            continue
+        if not started:
+            continue
+        if "العملة" in t:
+            break
+        if not code and re.fullmatch(r"\d{4,}", t):
+            code = t
+            continue
+        name_ws.append(w)
+    return {"cust_code": code, "cust_name": _line_text(name_ws) if name_ws else ""}
+
+
 PURCHASE_WORDS = {
     "supp_no": ("رقم المورد", "كود المورد"), "supp_name": ("اسم المورد", "المورد"), "currency": ("العملة",),
     "item_code": ("رقم الصنف", "كود الصنف"), "item_name": ("اسم الصنف",), "unit": ("الوحدة",),

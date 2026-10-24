@@ -262,3 +262,10 @@ def test_quantities_by_item_join_the_cost_file(company):  # noqa: F811
     # a by-customer quantities file replaces the by-item quantities
     m2 = I.merge_sales(m, I.parse_sales_qty(qty_rows()), "qty")
     assert not any(r["cust_code"] == I.ITEM_ONLY for r in m2)
+
+
+def test_sales_pdf_helpers():
+    assert I.SALES_CODE_RE.fullmatch("02-08422.12") and I.SALES_CODE_RE.fullmatch("01-05553")
+    assert I.NUM_RE.fullmatch(".5") and I.NUM_RE.fullmatch("1,034.34") and not I.NUM_RE.fullmatch("01-05553")
+    assert [I._sales_pdf_col(x) for x in (99, 174, 230, 286, 360, 427, 470, 556)] == \
+        ["local", "net_tax", "tax", "charges", "disc", "amount", "free", "qty"]
