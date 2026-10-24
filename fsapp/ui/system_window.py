@@ -1129,12 +1129,14 @@ class DataPage(QWidget):
             return
         fmt = items.sales_format(rows)
         if fmt is None:
-            error(self, "لم أتعرف على الملف. المطلوب أحد التقريرين:\n"
+            error(self, "لم أتعرف على الملف. المطلوب أحد التقارير:\n"
                         "• مبيعات الأصناف بالعميل: رقم العميل، رقم الصنف، الكمية، المبلغ، المردود، الصافي\n"
-                        "• مبيعات الأصناف بالعميل بالتكلفة: رقم الصنف، الصافي، التكلفة، اسم العميل")
+                        "• مبيعات الأصناف بالعميل بالتكلفة: رقم الصنف، الصافي، التكلفة، اسم العميل\n"
+                        "• مبيعات الأصناف (بدون العميل): رقم الصنف، الوحدة، الكمية، مبلغ المبيعات")
             return
+        parse = {"qty": items.parse_sales_qty, "cost": items.parse_sales_cost, "item": items.parse_sales_items}[fmt]
         try:
-            new = items.parse_sales_qty(rows) if fmt == "qty" else items.parse_sales_cost(rows)
+            new = parse(rows)
         except Exception as e:  # noqa: BLE001
             error(self, f"تعذر قراءة الملف:\n{e}")
             return
@@ -1143,19 +1145,23 @@ class DataPage(QWidget):
             return
         db = self.win.db
         existing = db.item_sales([period])
-        had = any((r["net"] if fmt == "qty" else r["cost"]) is not None for r in existing)
-        kind = "الكميات والمبيعات" if fmt == "qty" else "المبيعات بالتكلفة"
+        had = any(r["cust_code"] == items.ITEM_ONLY if fmt == "item" else
+                  (r["net"] if fmt == "qty" else r["cost"]) is not None and r["cust_code"] != items.ITEM_ONLY
+                  for r in existing)
+        kind = {"qty": "الكميات والمبيعات بالعميل", "cost": "المبيعات بالتكلفة",
+                "item": "الكميات حسب الصنف (بدون العميل)"}[fmt]
         if had and QMessageBox.question(self, "تأكيد", f"يوجد ملف «{kind}» محفوظ لشهر {calc.month_label(period)}. "
                                         "استبداله؟") != QMessageBox.Yes:
             return
         merged = items.merge_sales(existing, new, fmt)
         db.save_item_sales(period, merged)
-        total = sum((r["net"] if fmt == "qty" else r["cnet"]) or 0 for r in new)
+        total = sum(r[{"qty": "net", "cost": "cnet", "item": "sales"}[fmt]] or 0 for r in new)
         known = items.customer_info(db)
-        unknown = len({r["cust_code"] for r in new if r["cust_code"] not in known})
+        unknown = len({r["cust_code"] for r in new if r["cust_code"] not in known and r["cust_code"] != items.ITEM_ONLY})
         item_list = db.items()
         no_item = len({r["item_code"] for r in new if r["item_code"] not in item_list})
-        msg = [f"تم حفظ «{kind}» لشهر {calc.month_label(period)}: {len(new)} سطر، الصافي {total:,.0f}."]
+        msg = [f"تم حفظ «{kind}» لشهر {calc.month_label(period)}: {len(new)} "
+               + ("صنف، المبيعات قبل الضريبة" if fmt == "item" else "سطر، الصافي") + f" {total:,.0f}."]
         if fmt == "cost":
             cost = sum(r["cost"] or 0 for r in new)
             msg.append(f"التكلفة {cost:,.0f} — مجمل الربح {total - cost:,.0f} ({(total - cost) / total:.1%})." if total else "")
@@ -1163,8 +1169,20 @@ class DataPage(QWidget):
             msg.append(f"• {unknown} عميل غير موجود في «بيانات العملاء» — مندوبه وفرعه غير محدد.")
         if no_item:
             msg.append(f"• {no_item} صنف غير موجود في قائمة الأصناف — يظهر «غير مصنف».")
-        other = "المبيعات بالتكلفة" if fmt == "qty" else "الكميات والمبيعات"
-        msg.append(f"ℹ يمكن رفع ملف «{other}» لنفس الشهر وسيندمج معه حسب العميل والصنف.")
+        cust_rows = [r for r in merged if r["cust_code"] != items.ITEM_ONLY]
+        if fmt == "item":
+            if cust_rows:
+                v = sum((r["net"] if r["net"] is not None else r["cnet"]) or 0 for r in cust_rows)
+                msg.append(f"الكميات ارتبطت بالأصناف. القيمة والتكلفة من ملف العملاء ({v:,.0f}) — الفرق مع هذا الملف "
+                           f"{v - total:,.0f}.")
+            else:
+                msg.append("ℹ هذا الملف بدون العميل: ارفع ملف «المبيعات بالتكلفة» لنفس الشهر لتظهر التكلفة "
+                           "والعملاء والمندوبين، وتبقى الكميات من هذا الملف.")
+        elif fmt == "cost" and any(r["cust_code"] == items.ITEM_ONLY for r in merged):
+            msg.append("الكميات من ملف «الكميات حسب الصنف» المرفوع لنفس الشهر.")
+        else:
+            other = "المبيعات بالتكلفة" if fmt == "qty" else "الكميات (بالعميل أو حسب الصنف)"
+            msg.append(f"ℹ يمكن رفع ملف «{other}» لنفس الشهر وسيندمج معه.")
         text_ = "\n".join(m for m in msg if m)
         self.log.appendPlainText(text_)
         self.win.data_changed()

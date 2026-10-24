@@ -20,7 +20,29 @@ class Data:
         self.months = [m for m in months]
         self.items = _cached(ctx, "items", lambda: ctx.db.items())
         self.cust = _cached(ctx, "cust_info", lambda: I.customer_info(ctx.db))
-        self.rows = ctx.db.item_sales(self.months) if self.months else []
+        rows = ctx.db.item_sales(self.months) if self.months else []
+        # by-item rows (quantities file without the customer): they give the quantities of a month whose customer
+        # files have none; a month with only that file uses its amounts too
+        self.qty_by_item, self.free_by_item = defaultdict(float), defaultdict(float)
+        self.item_file = defaultdict(float)        # month → sales before tax in the by-item file (reconciliation)
+        self.rows = []
+        units = {}
+        for m in self.months:
+            cust = [r for r in rows if r["period"] == m and r["cust_code"] != I.ITEM_ONLY]
+            by_item = [r for r in rows if r["period"] == m and r["cust_code"] == I.ITEM_ONLY]
+            for r in by_item:
+                self.item_file[m] += r["sales"] or 0.0
+                units.setdefault(r["item_code"], r["unit"])
+            if not cust:
+                for r in by_item:
+                    r["net"] = r["sales"]
+                    r["cust_name"] = "(بدون تفصيل العملاء)"
+                cust = by_item
+            qty_src = cust if any(r["net_qty"] is not None for r in cust) or not by_item else by_item
+            for r in qty_src:
+                self.qty_by_item[r["item_code"]] += r["net_qty"] or 0.0
+                self.free_by_item[r["item_code"]] += r["free_qty"] or 0.0
+            self.rows += cust
         for r in self.rows:
             r["val"] = r["net"] if r["net"] is not None else (r["cnet"] or 0.0)
             r["cls"] = I.item_class(self.items, r["item_code"])
@@ -34,6 +56,8 @@ class Data:
             it = self.items.get(r["item_code"])
             if it and it.get("name"):
                 r["item_name"] = it["name"]
+            if not r.get("unit"):
+                r["unit"] = units.get(r["item_code"]) or (it or {}).get("unit", "")
         self.total = sum(r["val"] for r in self.rows)
         self.has_cost = any(r["cost"] is not None for r in self.rows)
 
@@ -179,6 +203,14 @@ def rpt_it_groups(ctx, p):
                            "صنّفها من «الأصناف والعملاء» ← قائمة الأصناف.", "warn"))
     if not d.has_cost:
         blocks.append(Para("مجمل الربح يظهر بعد رفع ملف «مبيعات الأصناف بالتكلفة» لنفس الشهر."))
+    for m, v in sorted(d.item_file.items()):
+        cust_val = sum(r["val"] for r in d.rows if r["period"] == m and r["cust_code"] != I.ITEM_ONLY)
+        if cust_val:
+            diff = cust_val - v
+            blocks.append(Para(f"مطابقة {range_label([m])}: ملف الكميات حسب الصنف (قبل الضريبة) {v:,.0f} — ملف العملاء "
+                               f"{cust_val:,.0f} — الفرق {diff:,.0f}" + (" ✓" if abs(diff) <= max(1, abs(v) * 0.005)
+                                                                      else " ⚠ راجع الملفين (فترة أو مردودات مختلفة)"),
+                               "sub" if abs(diff) <= max(1, abs(v) * 0.005) else "warn"))
     note = _missing_note(d, p)
     if note:
         blocks.append(note)
@@ -214,7 +246,7 @@ def rpt_it_top(ctx, p):
     for code, a in sorted(its.items(), key=lambda x: -x[1].val)[:50]:
         cum += a.val
         n, unit, c = names[code]
-        rows.append(Row(code, [n, c[0], c[3], unit, a.qty, a.val, safe_div(a.val, d.total), safe_div(cum, d.total),
+        rows.append(Row(code, [n, c[0], c[3], unit, d.qty_by_item.get(code, 0.0), a.val, safe_div(a.val, d.total), safe_div(cum, d.total),
                                cls[code], len(a.custs), a.margin]))
     blocks = [Table(["الفئة", "عدد الأصناف", "% من الأصناف", "صافي المبيعات", "% من المبيعات"], summ,
                     ["d", "%", "n", "%"], title="تحليل ABC"),
@@ -387,8 +419,8 @@ def rpt_it_returns(ctx, p):
         Row("إجمالي المبيعات", [tot.sales]), Row("المردودات", [tot.returns]),
         Row("صافي المبيعات", [tot.sales - tot.returns], "sub"),
         Row("نسبة المردودات", [safe_div(tot.returns, tot.sales)], fmt="%"),
-        Row("الكميات المجانية (كل الوحدات)", [tot.free]),
-        Row("أصناف لها كمية مجانية", [len({r['item_code'] for r in d.rows if (r['free_qty'] or 0) > 0})], fmt="d")],
+        Row("الكميات المجانية (كل الوحدات)", [sum(d.free_by_item.values())]),
+        Row("أصناف لها كمية مجانية", [sum(1 for v in d.free_by_item.values() if v > 0)], fmt="d")],
         ["n"], title="الإجمالي")]
     its = group(d.rows, lambda r: r["item_code"])
     names = {r["item_code"]: (r["item_name"], r["unit"]) for r in d.rows}
@@ -402,11 +434,12 @@ def rpt_it_returns(ctx, p):
     blocks.append(Table(["رقم العميل", "اسم العميل", "المندوب", "المردودات", "المبيعات", "نسبة المردود"],
                         [Row(k, [cn[k][0], cn[k][1], a.returns, a.sales, safe_div(a.returns, a.sales)])
                          for k, a in cret], ["t", "t", "n", "n", "%"], title="أعلى 20 عميلًا في المردودات"))
-    free = sorted([x for x in its.items() if x[1].free > 0], key=lambda x: -x[1].free)[:20]
+    free = sorted([(k, f) for k, f in d.free_by_item.items() if f > 0 and k in names], key=lambda x: -x[1])[:20]
     if free:
         blocks.append(Table(["رقم الصنف", "اسم الصنف", "الوحدة", "الكمية المجانية", "صافي الكمية المباعة",
                              "المجاني ÷ المباع"],
-                            [Row(k, [names[k][0], names[k][1], a.free, a.qty, safe_div(a.free, a.qty)]) for k, a in free],
+                            [Row(k, [names[k][0], names[k][1], f, d.qty_by_item.get(k, 0.0),
+                                     safe_div(f, d.qty_by_item.get(k, 0.0))]) for k, f in free],
                             ["t", "t", "n", "n", "%"], title="الكميات المجانية"))
     return Report("it_returns", "المردودات والكميات المجانية", range_label(p.months()), blocks)
 
@@ -423,8 +456,8 @@ def rpt_it_lost(ctx, p):
     if not have_prior:
         return Report("it_lost", "العملاء المتوقفون عن الشراء والجدد", range_label(months), [Para(
             "يلزم مبيعات أصناف لشهور قبل الفترة (حتى 6 أشهر) للمقارنة.", "warn")])
-    cur = group(d.rows, lambda r: r["cust_code"])
-    old = group(pd.rows, lambda r: r["cust_code"])
+    cur = group([r for r in d.rows if r["cust_code"] != I.ITEM_ONLY], lambda r: r["cust_code"])
+    old = group([r for r in pd.rows if r["cust_code"] != I.ITEM_ONLY], lambda r: r["cust_code"])
     info = {**{r["cust_code"]: r for r in pd.rows}, **{r["cust_code"]: r for r in d.rows}}
     n_prior = len(have_prior)
     stopped = sorted([(k, a) for k, a in old.items() if k not in cur], key=lambda x: -x[1].val)
@@ -564,7 +597,7 @@ def rpt_it_pvs(ctx, p):
         name = names[k][0] if k in names else pp["name"]
         su = names[k][1] if k in names else ""
         pu = pp["unit"] if pp else ""
-        rows.append(Row(k, [name, su, s.qty if s else 0.0, s.val if s else 0.0, pu, pp["qty"] if pp else 0.0,
+        rows.append(Row(k, [name, su, d.qty_by_item.get(k, 0.0), s.val if s else 0.0, pu, pp["qty"] if pp else 0.0,
                             pp["base"] if pp else 0.0,
                             "✓" if not su or not pu or I.norm(su) == I.norm(pu) else "⚠ وحدة مختلفة"]))
     blocks.append(Table(["رقم الصنف", "اسم الصنف", "وحدة البيع", "الكمية المباعة", "صافي المبيعات", "وحدة الشراء",

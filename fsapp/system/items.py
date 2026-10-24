@@ -260,13 +260,55 @@ def item_class(items, code, name=""):
 
 
 # ------------------------------------------------------------------ item sales
+ITEM_ONLY = "*"     # customer code of the rows read from a by-item file (quantities without the customer)
+
+
 def sales_format(rows):
-    """'qty' (sales / returns / net with quantities), 'cost' (net with cost and margin) or None."""
+    """'qty' (by customer: sales / returns / net with quantities), 'cost' (by customer: net with cost),
+    'item' (by item or invoice line, no customer: quantities and amounts) or None."""
     if find_header(rows, "رقم العميل", "رقم الصنف") is not None:
         return "qty"
     if find_header(rows, "رقم الصنف", "التكلفة") is not None:
         return "cost"
+    if find_header(rows, "رقم الصنف", "الكمية") is not None:
+        return "item"
     return None
+
+
+def parse_sales_items(rows):
+    """Item sales without the customer (one line per item or per invoice line): summed by item.
+    Amount = sales amount − discount (before tax; the «net» column of this report includes the VAT)."""
+    h = find_header(rows, "رقم الصنف", "الكمية")
+    cells = [norm(c) for c in rows[h]]
+    c_item, c_name, c_unit = col(cells, "رقم الصنف"), col(cells, "اسم الصنف"), col(cells, "الوحدة")
+    c_qty = next((k for k, c in enumerate(cells) if "كميه" in c and "مجان" not in c), None)
+    c_free = next((k for k, c in enumerate(cells) if "مجان" in c), None)
+    c_sales = col(cells, "مبلغ المبيعات", "المبيعات", "المبلغ")
+    c_disc = col(cells, "الخصم")
+    c_ret = col(cells, "مردود")
+
+    def v(r, k):
+        return (num(r[k]) or 0.0) if k is not None and k < len(r) else 0.0
+
+    out = {}
+    for r in rows[h + 1:]:
+        item = text(r[c_item]) if c_item is not None else ""
+        if not item or not re.search(r"\d", item):
+            continue
+        rec = out.setdefault(item, {"cust_code": ITEM_ONLY, "cust_name": "", "item_code": item,
+                                    "item_name": text(r[c_name]) if c_name is not None else "",
+                                    "unit": text(r[c_unit]) if c_unit is not None else "",
+                                    "qty": 0.0, "free_qty": 0.0, "sales": 0.0, "ret_qty": 0.0, "returns": 0.0,
+                                    "net_qty": 0.0})
+        q = v(r, c_qty)
+        rec["qty"] += q
+        rec["net_qty"] += q
+        rec["free_qty"] += v(r, c_free)
+        rec["sales"] += v(r, c_sales) - v(r, c_disc)
+        rec["returns"] += v(r, c_ret)
+    for rec in out.values():
+        rec["net"] = None          # values come from the customer files; this file adds the quantities
+    return list(out.values())
 
 
 def parse_sales_qty(rows):
@@ -375,7 +417,11 @@ COST_KEYS = ("cnet", "cost")
 
 def merge_sales(existing, new, fmt):
     """Combine a month's saved rows with a newly read file of format fmt (the file replaces its own fields;
-    the other format's fields are kept). Rows are summed by (customer, item)."""
+    the other format's fields are kept). Rows are summed by (customer, item).
+    fmt 'item' (no customer) replaces only the by-item rows of the month; a by-customer quantities file drops them
+    (its quantities are more detailed), a cost file keeps them."""
+    if fmt == "item":
+        return [r for r in existing if r["cust_code"] != ITEM_ONLY] + [dict(r, cnet=None, cost=None) for r in new]
     keys = QTY_KEYS if fmt == "qty" else COST_KEYS
     other = COST_KEYS if fmt == "qty" else QTY_KEYS
     out = {}

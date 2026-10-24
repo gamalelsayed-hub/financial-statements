@@ -222,3 +222,43 @@ def test_purchases_pdf_words():
     out = I.read_purchases(rows, first, m)
     assert out[0]["net"] == 1000.5 and out[0]["qty"] == 100 and out[0]["currency"] == "USD"
     assert I.purchase_base(out[0], {"USD": 3.75}, "SAR") == 1000.5 * 3.75
+
+
+def item_rows():
+    """Sales by invoice line without the customer: quantities, amount, discount, tax, net with tax."""
+    return [[None] * 11,
+            ["رقم الصنف", "اسم الصنف", "الوحدة", "الكمية", "ك.المجانيه", "مبلغ المبيعات", "الخصم", "الأعباء",
+             "الضريبة", "صافي المبيعات", "مبلغ الصافي بالمحلي"],
+            [None] * 11,
+            ["01-00001", "مسمار", "علبه", 6, 1, 600, None, None, 90, 690, 690],
+            ["01-00001", "مسمار", "علبه", 4, None, 400, None, None, 60, 460, 460],
+            ["01-00002", "شريط", "حبه", 5, None, 410, 10, None, 60, 460, 460],
+            [70000, "إيجار", "حبه", 1, None, 100, None, None, 15, 115, 115]]
+
+
+def test_quantities_by_item_join_the_cost_file(company):  # noqa: F811
+    db = company
+    assert I.sales_format(item_rows()) == "item"
+    it = {r["item_code"]: r for r in I.parse_sales_items(item_rows())}
+    assert it["01-00001"]["qty"] == 10 and it["01-00001"]["free_qty"] == 1 and it["01-00001"]["sales"] == 1000
+    assert it["01-00002"]["sales"] == 400 and "70000" in it                 # before tax, after discount
+    m = I.merge_sales([], I.parse_sales_cost(cost_rows()), "cost")
+    m = I.merge_sales(m, list(it.values()), "item")
+    m = I.merge_sales(m, I.parse_sales_cost(cost_rows()), "cost")          # re-uploading the cost file keeps them
+    db.save_item_sales("2026-03", m)
+    ctx = Ctx(db)
+    d = IR.data(ctx, ["2026-03"])
+    assert abs(d.total - 3400) < 0.01                                       # values from the cost file only
+    assert d.qty_by_item["01-00001"] == 10 and d.free_by_item["01-00001"] == 1
+    top = R.build("it_top", ctx, R.Params(end="2026-03"))
+    row = next(r for r in top.blocks[1].rows if r.label == "01-00001")
+    assert row.values[4] == 10 and row.values[5] == 1000
+    g = R.build("it_groups", ctx, R.Params(end="2026-03"))
+    assert any("مطابقة" in getattr(b, "text", "") for b in g.blocks)
+    # a month with only the by-item file uses its amounts
+    db.save_item_sales("2026-02", I.merge_sales([], list(it.values()), "item"))
+    ctx = Ctx(db)
+    assert abs(IR.data(ctx, ["2026-02"]).total - 1500) < 0.01
+    # a by-customer quantities file replaces the by-item quantities
+    m2 = I.merge_sales(m, I.parse_sales_qty(qty_rows()), "qty")
+    assert not any(r["cust_code"] == I.ITEM_ONLY for r in m2)
