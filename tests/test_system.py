@@ -331,8 +331,14 @@ def test_aging_reports_and_checks(company):
     total_row = next(r for b in cust.blocks if isinstance(b, R.Table) for r in b.rows if r.label == "الإجمالي")
     assert total_row.values[1] == 75000 and total_row.values[3] == 15000 + 5000
     supp = R.build("suppliers", ctx, p)
-    tot = next(r for b in supp.blocks if isinstance(b, R.Table) for r in b.rows if r.kind == "tot")
+    tot = next(r for b in supp.blocks if isinstance(b, R.Table) for r in b.rows if r.label.startswith("الإجمالي ("))
     assert tot.values[5] == 16000 + 1400 * 3.75 and tot.values[6] == 6000 + 400 * 3.75
+    # supplier type by the first digit: "10" local, "9" services and other
+    types = {r.label: r.values for r in supp.blocks[1].rows}
+    assert types["محلي"][0] == 1 and abs(types["محلي"][6] - 1400 * 3.75) < 0.01
+    assert types["خدمات وأخرى"][0] == 1 and types["خدمات وأخرى"][6] == 16000 and types["خارجي"][0] == 0
+    total = R.build("suppliers", ctx, R.Params(end="2026-03", supp_view="total"))
+    assert any(b.title and "أعلى 15" in b.title for b in total.blocks if isinstance(b, R.Table))
     names = {c[0] for c in R.run_checks(ctx, p)}
     assert "تقرير أعمار العملاء = الميزان" in names and "تقرير أعمار الموردين = الميزان" in names
 

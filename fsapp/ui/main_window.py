@@ -14,6 +14,7 @@ from .. import classifier, engine, importer, reports
 from ..categories import BY_KEY, CATEGORIES, GROUP_NAMES, full_label
 from ..export_excel import export as export_excel
 from ..i18n import lang, set_lang, t
+from .zoom import pt
 
 CAT_ROLE = Qt.UserRole + 1
 GROUP_COLORS = {"CA": "#1d6fb8", "NCA": "#12355b", "CL": "#b54708", "NCL": "#93370d", "EQ": "#6941c6",
@@ -131,13 +132,13 @@ class ImportPage(QWidget):
         lay = QVBoxLayout(self)
         self.help = QLabel()
         self.help.setWordWrap(True)
-        self.help.setStyleSheet("font-size: 11pt; padding: 6px; background:#eef4fb; border-radius:6px;")
+        self.help.setStyleSheet(f"font-size: {pt(11)}; padding: 6px; background:#eef4fb; border-radius:6px;")
         lay.addWidget(self.help)
 
         btns = QHBoxLayout()
         self.btn_file = QPushButton()
         self.btn_file.setMinimumHeight(40)
-        self.btn_file.setStyleSheet("font-size: 11pt; font-weight: 600;")
+        self.btn_file.setStyleSheet(f"font-size: {pt(11)}; font-weight: 600;")
         self.btn_file.clicked.connect(self.choose_file)
         self.btn_sample = QPushButton()
         self.btn_sample.clicked.connect(lambda: self.load_file(resource_path("sample", "sample_trial_balance.xlsx")))
@@ -527,7 +528,7 @@ class MainWindow(QMainWindow):
         self.nav = QListWidget()
         self.nav.setFixedWidth(220)
         self.nav.setStyleSheet(
-            "QListWidget { background:#12355b; color:white; font-size:11pt; border:none; }"
+            f"QListWidget {{ background:#12355b; color:white; font-size:{pt(11)}; border:none; }}"
             "QListWidget::item { padding:14px 10px; }"
             "QListWidget::item:selected { background:#1d6fb8; }"
             "QListWidget::item:disabled { color:#8ea3bd; }")

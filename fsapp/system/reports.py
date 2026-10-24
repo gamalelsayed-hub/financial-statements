@@ -45,6 +45,7 @@ class Params:
     comp: str = "prev"      # prev | ly | none | YYYY-MM
     branch: str = ""
     view: str = "period"    # period | ytd
+    supp_view: str = "type"  # suppliers: type (local / foreign / services) | total
 
     def months(self):
         return months_range(self.end, self.n)
@@ -429,6 +430,10 @@ def run_checks(ctx: Ctx, p: Params):
     if supp:
         ss = AG.suppliers_summary(supp, AG.rates(ctx.db), ctx.base_currency)
         add("تقرير أعمار الموردين = الميزان", bs["payables"] - ss["total"], 1, "عملات أجنبية أو موردون خارج التقرير")
+        for t, ts in AG.suppliers_by_type(supp, AG.rates(ctx.db), ctx.base_currency):
+            if ts["count"]:
+                add(f"{AG.TYPE_TITLES[t]}: متجاوزون لفترة الائتمان", ts["over_count"], 0,
+                    f"المتجاوز {ts['overdue']:,.0f} — راجع قائمة الموردين ({t})", True)
         add("موردون بعملة بدون سعر صرف", ss["no_rate"], 0, "أضف سعر العملة في الإعدادات", True)
     return out
 
@@ -851,20 +856,43 @@ def rpt_suppliers(ctx: Ctx, p: Params):
         if o > 0.005:
             over.append((o, r, rate))
     over.sort(key=lambda x: -x[0])
-    top_rows = [Row(r["name"] or "", [r["no"], r.get("currency") or base, AG.n(r.get("credit")),
-                                      AG.supplier_total(r) * rate, o, AG.n(r["b4"]) * rate])
-                for o, r, rate in over[:15]]
+    # by supplier type (1 local, 2 foreign, other services) in the base currency
+    type_rows = []
+    for t, ts in AG.suppliers_by_type(rows, rate_map, base):
+        rs = [r for r in rows if AG.supplier_type(r.get("no")) == t]
+        b = [sum(AG.n(r[x]) * (AG.supplier_rate(r, rate_map, base) or 0) for r in rs) for x in AG.BUCKETS]
+        type_rows.append(Row(t, [ts["count"]] + b + [ts["total"], ts["overdue"], safe_div(ts["overdue"], ts["total"]),
+                                                     safe_div(ts["total"], s["total"])]))
+    type_rows.append(Row("الإجمالي", [s["count"]] + tot_b + [s["total"], s["overdue"], safe_div(s["overdue"], s["total"]),
+                                                              1 if s["total"] else None], "tot"))
+
+    def top(items, n, with_type):
+        return [Row(r["name"] or "", ([AG.supplier_type(r.get("no"))] if with_type else [])
+                    + [r["no"], r.get("currency") or base, AG.n(r.get("credit")), AG.supplier_total(r) * rate, o,
+                       AG.n(r["b4"]) * rate]) for o, r, rate in items[:n]]
+    top_cols = ["اسم المورد", "رقم المورد", "العملة", "فترة الائتمان (يوم)", f"الإجمالي ({base})",
+                f"المتجاوز ({base})", f"أكثر من 120 ({base})"]
     blocks = [
         Para(f"المتجاوز لفترة الائتمان: {s['overdue']:,.0f} {base} لدى {s['over_count']} مورد."
              + (f" ⚠ {s['no_rate']} مورد بعملة بدون سعر صرف — أضف السعر في الإعدادات." if s["no_rate"] else ""),
              "warn" if s["overdue"] > 0.5 or s["no_rate"] else "good"),
+        Table(["نوع المورد", "العدد"] + AG.BUCKET_NAMES + ["الإجمالي", "المتجاوز لفترة الائتمان", "نسبة المتجاوز",
+                                                         "% من الإجمالي"], type_rows,
+              ["d", "n", "n", "n", "n", "n", "n", "n", "%", "%"],
+              title=f"حسب نوع المورد ({base}) — رقم المورد: 1 محلي، 2 خارجي، غيره خدمات وأخرى"),
         Table(["العملة"] + AG.BUCKET_NAMES + ["الإجمالي", "المتجاوز لفترة الائتمان", "نسبة المتجاوز", "سعر الصرف",
                                               f"الإجمالي ({base})", f"المتجاوز ({base})"], trows,
               ["n", "n", "n", "n", "n", "n", "n", "%", "x", "n", "n"], title="حسب العملة"),
-        Table(["اسم المورد", "رقم المورد", "العملة", "فترة الائتمان (يوم)", f"الإجمالي ({base})",
-               f"المتجاوز ({base})", f"أكثر من 120 ({base})"], top_rows, ["t", "t", "d", "n", "n", "n"],
-              title="أعلى 15 موردًا في المتجاوز لفترة الائتمان"),
     ]
+    if p.supp_view == "total":
+        blocks.append(Table(["اسم المورد", "النوع"] + top_cols[1:], top(over, 15, True),
+                            ["t", "t", "t", "d", "n", "n", "n"], title="أعلى 15 موردًا في المتجاوز لفترة الائتمان"))
+    else:
+        for t in AG.SUPPLIER_TYPES:
+            items = [x for x in over if AG.supplier_type(x[1].get("no")) == t]
+            if items:
+                blocks.append(Table(top_cols, top(items, 10, False), ["t", "t", "d", "n", "n", "n"],
+                                    title=f"{AG.TYPE_TITLES[t]} — أعلى 10 في المتجاوز لفترة الائتمان"))
     return Report("suppliers", "تحليل أرصدة الموردين", f"في نهاية {month_label(p.end)}", blocks)
 
 # ================================================================== registry

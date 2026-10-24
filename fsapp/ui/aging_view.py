@@ -9,6 +9,8 @@ from ..system import aging as AG
 from ..system import render
 from ..system import reports as R
 from ..system.calc import month_label
+from .table_tools import freeze
+from .zoom import pt
 
 NAVY = "#12355b"
 ALL = "الكل"
@@ -69,6 +71,7 @@ class AgingList(QWidget):
         header.sectionClicked.connect(self.sort_by)
         self.sort_key = self.DEFAULT_SORT
         self.sort_desc = True
+        freeze(self.table, 2)          # number and name stay visible when scrolling sideways
         lay.addWidget(self.table, 1)
 
     # ---- data
@@ -218,8 +221,8 @@ class SuppliersList(AgingList):
     TITLE = "قائمة الموردين وأعمار أرصدتهم"
     ONLY_LABEL = "المتجاوزون لفترة الائتمان فقط"
     DEFAULT_SORT = "_total_base"
-    FILTERS = [("العملة:", "currency"), ("الحالة:", "_status")]
-    COLUMNS = [("رقم المورد", "no", "t"), ("اسم المورد", "name", "t"), ("العملة", "currency", "t"),
+    FILTERS = [("النوع:", "_type"), ("العملة:", "currency"), ("الحالة:", "_status")]
+    COLUMNS = [("رقم المورد", "no", "t"), ("اسم المورد", "name", "t"), ("النوع", "_type", "t"), ("العملة", "currency", "t"),
                ("فترة الائتمان (يوم)", "credit", "d"), ("الإجمالي بالعملة المحلية", "_total_base", "n"),
                ("المتجاوز بالعملة المحلية", "_over_base", "n"), ("الحالة", "_status", "t"),
                ("الإجمالي", "_total", "n"), ("المتجاوز لفترة الائتمان", "_over", "n"), ("نسبة المتجاوز", "_over_pct", "%"),
@@ -233,6 +236,7 @@ class SuppliersList(AgingList):
 
     def enrich(self, r):
         r = dict(r)
+        r["_type"] = AG.supplier_type(r.get("no"))
         r["_total"] = AG.supplier_total(r)
         r["_over"] = AG.supplier_overdue(r)
         r["_over_pct"] = r["_over"] / r["_total"] if abs(r["_total"]) > 0.005 else None
@@ -251,7 +255,9 @@ class SuppliersList(AgingList):
         over = sum(r["_over_base"] or 0 for r in v)
         n_over = sum(1 for r in v if r["_over"] > 0.005)
         no_rate = sum(1 for r in v if r["_rate"] is None)
-        return (f"الموردون: {len(v)} من {len(self.rows)}   |   الإجمالي: {tot:,.0f} {self.base}   |   "
+        by_type = "، ".join(f"{t} {sum(r['_total_base'] or 0 for r in v if r['_type'] == t):,.0f}"
+                            for t in AG.SUPPLIER_TYPES if any(r["_type"] == t for r in v))
+        return (f"الموردون: {len(v)} من {len(self.rows)}   |   الإجمالي: {tot:,.0f} {self.base} ({by_type})   |   "
                 f"المتجاوز: {over:,.0f} ({(over / tot if tot else 0):.0%}) لدى {n_over} مورد"
                 + (f"   |   ⚠ {no_rate} بدون سعر صرف" if no_rate else ""))
 
@@ -262,7 +268,7 @@ class AgingPage(QWidget):
         self.win = win
         lay = QVBoxLayout(self)
         self.head = QLabel()
-        self.head.setStyleSheet(f"color:{NAVY}; font-size:12pt; font-weight:700;")
+        self.head.setStyleSheet(f"color:{NAVY}; font-size:{pt(12)}; font-weight:700;")
         lay.addWidget(self.head)
         self.tabs = QTabWidget()
         self.customers = CustomersList(win)

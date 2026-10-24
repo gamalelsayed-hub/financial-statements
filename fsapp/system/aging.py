@@ -60,6 +60,22 @@ def rates(db):
     return out
 
 
+SUPPLIER_TYPES = ["محلي", "خارجي", "خدمات وأخرى"]
+TYPE_TITLES = {"محلي": "الموردون المحليون", "خارجي": "الموردون الخارجيون", "خدمات وأخرى": "موردو الخدمات وأخرى"}
+
+
+def supplier_type(no):
+    """By the first digit of the supplier number: 1 local, 2 foreign, anything else services and other."""
+    s = str(no or "").strip()
+    return "محلي" if s.startswith("1") else "خارجي" if s.startswith("2") else "خدمات وأخرى"
+
+
+def suppliers_by_type(rows, rate_map, base):
+    """[(type, summary)] for the three supplier types (empty types included)."""
+    return [(t, suppliers_summary([r for r in rows if supplier_type(r.get("no")) == t], rate_map, base))
+            for t in SUPPLIER_TYPES]
+
+
 def supplier_rate(r, rate_map, base):
     cur = (r.get("currency") or "").strip().upper() or base
     return rate_map.get(cur)

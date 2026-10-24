@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QFileDialog, QFrame, QGridLayout, QHBoxLayout, QH
 
 from ..system import dashboard, render
 from ..system import reports as R
+from .zoom import pt
 
 NAVY = "#12355b"
 # categorical slots 1-3 (validated reference palette), fixed order
@@ -50,14 +51,14 @@ class Card(QFrame):
         v = QVBoxLayout(self)
         v.setContentsMargins(12, 8, 12, 8)
         t = QLabel(title)
-        t.setStyleSheet("color:#475467; font-size:9.5pt;")
+        t.setStyleSheet(f"color:#475467; font-size:{pt(9.5)};")
         val = QLabel(_fmt(value) if not isinstance(value, str) else value)
-        val.setStyleSheet(f"color:{NAVY}; font-size:17pt; font-weight:700;")
+        val.setStyleSheet(f"color:{NAVY}; font-size:{pt(17)}; font-weight:700;")
         if isinstance(value, (int, float)) and value < 0:
-            val.setStyleSheet("color:#b42318; font-size:17pt; font-weight:700;")
+            val.setStyleSheet(f"color:#b42318; font-size:{pt(17)}; font-weight:700;")
         l1, l2 = QLabel(line1), QLabel(line2)
         for lbl in (l1, l2):
-            lbl.setStyleSheet("color:#475467; font-size:9pt;")
+            lbl.setStyleSheet(f"color:#475467; font-size:{pt(9)};")
             lbl.setWordWrap(True)
         for w in (t, val, l1, l2):
             v.addWidget(w)
@@ -84,7 +85,7 @@ class DashboardPage(QScrollArea):
         lay.setSpacing(10)
         if not self.data:
             lbl = QLabel("لا توجد بيانات بعد — ارفع ميزان شهر من شاشة «البيانات الشهرية».")
-            lbl.setStyleSheet("color:#667085; font-size:12pt; padding:30px;")
+            lbl.setStyleSheet(f"color:#667085; font-size:{pt(12)}; padding:30px;")
             lay.addWidget(lbl)
             lay.addStretch()
             self.setWidget(box)
@@ -128,7 +129,7 @@ class DashboardPage(QScrollArea):
         reading = QLabel("<b>القراءة</b><br>" + "<br>".join("• " + r for r in d["reading"]))
         reading.setWordWrap(True)
         reading.setStyleSheet("background:white; border:1px solid #e4e7ec; border-radius:8px; padding:10px; "
-                              "color:#1d2433; font-size:10pt;")
+                              f"color:#1d2433; font-size:{pt(10)};")
         lay.addWidget(reading)
         lay.addStretch()
         self.box = box
@@ -138,7 +139,7 @@ class DashboardPage(QScrollArea):
         h = QHBoxLayout()
         v = QVBoxLayout()
         t = QLabel(f"لوحة التحكم — {company}")
-        t.setStyleSheet(f"color:{NAVY}; font-size:16pt; font-weight:700;")
+        t.setStyleSheet(f"color:{NAVY}; font-size:{pt(16)}; font-weight:700;")
         sub = QLabel(f"الشهر المعروض: {d['label']}   |   آخر شهر مُدخل: {d['last']}   |   "
                      "غيّر الشهر من «الفترة المنتهية في» أعلى الشاشة")
         sub.setStyleSheet("color:#475467;")
@@ -162,7 +163,7 @@ class DashboardPage(QScrollArea):
     @staticmethod
     def _section_title(text):
         lbl = QLabel(text)
-        lbl.setStyleSheet(f"color:{NAVY}; font-size:12pt; font-weight:700; margin-top:6px;")
+        lbl.setStyleSheet(f"color:{NAVY}; font-size:{pt(12)}; font-weight:700; margin-top:6px;")
         return lbl
 
     @staticmethod
@@ -173,7 +174,7 @@ class DashboardPage(QScrollArea):
         for level, text in alerts:
             lbl = QLabel(f"{STATUS_ICON[level]}  {text}")
             lbl.setWordWrap(True)
-            lbl.setStyleSheet(f"color:{STATUS[level]}; font-size:10.5pt; padding:2px;")
+            lbl.setStyleSheet(f"color:{STATUS[level]}; font-size:{pt(10.5)}; padding:2px;")
             v.addWidget(lbl)
         return w
 

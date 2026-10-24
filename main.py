@@ -5,6 +5,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
 from fsapp.i18n import set_lang
+from fsapp.ui import zoom
 from fsapp.ui.system_window import launch
 
 
@@ -17,6 +18,7 @@ def main():
     if sys.platform == "win32":
         app.setFont(QFont("Segoe UI", 10))
     set_lang("ar")
+    zoom.install()
     launch()
     sys.exit(app.exec())
 

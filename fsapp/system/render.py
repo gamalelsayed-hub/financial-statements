@@ -158,6 +158,8 @@ def write_excel(reps, company, path):
                 c.font = Font(bold=True, color="FFFFFF")
                 c.fill = PatternFill("solid", fgColor=navy)
                 c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            if ws.freeze_panes is None:
+                ws.freeze_panes = ws.cell(r + 1, 2)     # header row of the first table and the label column stay
             r += 1
             for row in b.rows:
                 ws.cell(r, 1, row.label)

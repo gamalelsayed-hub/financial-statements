@@ -23,6 +23,9 @@ from ..updater import UpdateChecker
 from ..version import BUILD
 from .aging_view import AgingPage
 from .dashboard_view import DashboardPage
+from . import zoom
+from .table_tools import freeze
+from .zoom import pt
 
 NAVY = "#12355b"
 
@@ -530,6 +533,7 @@ class MappingPage(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         self.table.setSortingEnabled(False)
+        freeze(self.table, 2)          # account number and name stay visible when scrolling sideways
         db_lists = {4: "fs_items", 5: "cf_items", 6: "branch_cats", 7: "exp_groups"}
         for col, table in db_lists.items():
             self.table.setItemDelegateForColumn(col, ListDelegate(self.table, lambda t=table: self.win.db.list_names(t)))
@@ -1075,7 +1079,7 @@ class ReportView(QScrollArea):
         for text, size, bold in ((company, 15, True), (rep.title, 13, True), (rep.subtitle, 10, False)):
             lbl = QLabel(text)
             lbl.setAlignment(Qt.AlignCenter)
-            lbl.setStyleSheet(f"color:{NAVY if bold else '#5b6475'}; font-size:{size}pt; font-weight:{700 if bold else 400};")
+            lbl.setStyleSheet(f"color:{NAVY if bold else '#5b6475'}; font-size:{pt(size)}; font-weight:{700 if bold else 400};")
             v.addWidget(lbl)
         for b in rep.blocks:
             if isinstance(b, R.Para):
@@ -1086,7 +1090,7 @@ class ReportView(QScrollArea):
                 continue
             if b.title:
                 lbl = QLabel(b.title)
-                lbl.setStyleSheet(f"color:{NAVY}; font-size:11pt; font-weight:700; margin-top:8px;")
+                lbl.setStyleSheet(f"color:{NAVY}; font-size:{pt(11)}; font-weight:700; margin-top:8px;")
                 v.addWidget(lbl)
             v.addWidget(self._table(b))
         v.addStretch()
@@ -1100,6 +1104,7 @@ class ReportView(QScrollArea):
         t.setSelectionMode(QAbstractItemView.ContiguousSelection)
         t.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         t.setWordWrap(False)
+        t.verticalHeader().setDefaultSectionSize(int(30 * zoom.level()))
         t.setStyleSheet(f"QHeaderView::section {{ background:{NAVY}; color:white; font-weight:600; padding:4px; }}"
                         "QTableWidget { gridline-color: #e4e7ec; }")
         bold = QFont()
@@ -1152,7 +1157,13 @@ class ReportView(QScrollArea):
         t.horizontalHeader().setDefaultAlignment(Qt.AlignCenter)
         t.horizontalHeader().setMinimumHeight(34)
         h = t.horizontalHeader().height() + sum(t.rowHeight(r) for r in range(t.rowCount())) + 22
+        # a long table scrolls inside itself so its header row stays visible; the label column is frozen
+        avail = max(320, self.viewport().height() - 70)
+        if h > avail:
+            t.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            h = avail
         t.setFixedHeight(h)
+        freeze(t, 1)
         return t
 
 # ================================================================== reports page
@@ -1189,7 +1200,12 @@ class ReportsPage(QWidget):
         self.view.addItem("الفترة", "period")
         self.view.addItem("من بداية السنة", "ytd")
         self.view.currentIndexChanged.connect(lambda *_: self.show_report())
-        for w in (self.branch_lbl, self.branch, self.view_lbl, self.view):
+        self.supp_lbl = QLabel("عرض الموردين:")
+        self.supp = QComboBox()
+        self.supp.addItem("تفصيلي حسب النوع (محلي / خارجي / خدمات)", "type")
+        self.supp.addItem("إجمالي", "total")
+        self.supp.currentIndexChanged.connect(self._supp_changed)
+        for w in (self.branch_lbl, self.branch, self.view_lbl, self.view, self.supp_lbl, self.supp):
             lv.addWidget(w)
         split.addWidget(left)
         self.browser = ReportView()
@@ -1199,7 +1215,15 @@ class ReportsPage(QWidget):
         lay.addWidget(split)
         self.current_report = None
 
+    def _supp_changed(self):
+        self.win.db.set_setting("supp_view", self.supp.currentData())
+        self.show_report()
+        self.win.dashboard.load()
+
     def load(self):
+        self.supp.blockSignals(True)
+        self.supp.setCurrentIndex(max(0, self.supp.findData(self.win.db.setting("supp_view", "type") or "type")))
+        self.supp.blockSignals(False)
         cur = self.branch.currentText()
         self.branch.blockSignals(True)
         self.branch.clear()
@@ -1223,6 +1247,8 @@ class ReportsPage(QWidget):
         self.branch_lbl.setVisible(key in R.NEEDS_BRANCH)
         self.view.setVisible(key in R.NEEDS_VIEW)
         self.view_lbl.setVisible(key in R.NEEDS_VIEW)
+        self.supp.setVisible(key == "suppliers")
+        self.supp_lbl.setVisible(key == "suppliers")
         params = self.win.params()
         if not params:
             self.browser.show_message("لا توجد بيانات بعد — ارفع ميزان شهر من شاشة «البيانات الشهرية».")
@@ -1230,6 +1256,7 @@ class ReportsPage(QWidget):
             return
         params.branch = self.branch.currentText()
         params.view = self.view.currentData()
+        params.supp_view = self.supp.currentData() or "type"
         try:
             rep = R.build(key, self.win.ctx, params)
         except Exception:  # noqa: BLE001
@@ -1249,7 +1276,7 @@ class StartDialog(QDialog):
         self.choice = None
         lay = QVBoxLayout(self)
         t = QLabel("نظام التقارير المالية والإدارية")
-        t.setStyleSheet(f"font-size:16pt; font-weight:700; color:{NAVY};")
+        t.setStyleSheet(f"font-size:{pt(16)}; font-weight:700; color:{NAVY};")
         t.setAlignment(Qt.AlignCenter)
         lay.addWidget(t)
         self.recent = QListWidget()
@@ -1317,6 +1344,18 @@ class SystemWindow(QMainWindow):
         spacer = QWidget()
         spacer.setSizePolicy(spacer.sizePolicy().horizontalPolicy().Expanding, spacer.sizePolicy().verticalPolicy())
         tb.addWidget(spacer)
+        for text, tip, fn, keys in (("🔍－", "تصغير (Ctrl + -)", zoom.zoom_out, "Ctrl+-"),
+                                    ("100%", "الحجم العادي (Ctrl + 0)", zoom.reset, "Ctrl+0"),
+                                    ("🔍＋", "تكبير (Ctrl + =) — أو Ctrl مع عجلة الماوس", zoom.zoom_in, "Ctrl+=")):
+            a = QAction(text, self)
+            a.setToolTip(tip)
+            a.setShortcut(keys)
+            a.triggered.connect(fn)
+            tb.addAction(a)
+            if text == "100%":
+                self.zoom_action = a
+        self.zoom_action.setText(f"{zoom.level() * 100:.0f}%")
+        zoom.on_change(self._zoom_changed)
         up = QAction("🔄 فحص التحديثات", self)
         up.triggered.connect(lambda: self.check_updates(manual=True))
         tb.addAction(up)
@@ -1333,7 +1372,7 @@ class SystemWindow(QMainWindow):
         self.nav = QListWidget()
         self.nav.setFixedWidth(210)
         self.nav.setStyleSheet(
-            f"QListWidget {{ background:{NAVY}; color:white; font-size:11pt; border:none; }}"
+            f"QListWidget {{ background:{NAVY}; color:white; font-size:{pt(11)}; border:none; }}"
             "QListWidget::item { padding:13px 10px; } QListWidget::item:selected { background:#1d6fb8; }")
         self.stack = QStackedWidget()
         self.reports_page = ReportsPage(self)
@@ -1353,6 +1392,16 @@ class SystemWindow(QMainWindow):
         self.data_changed()
         self.nav.setCurrentRow(0 if self.db.periods() else 3)
         self.check_updates(manual=False)
+
+    def _zoom_changed(self):
+        self.zoom_action.setText(f"{zoom.level() * 100:.0f}%")
+        self.setFont(QApplication.instance().font())
+        self.nav.setStyleSheet(
+            f"QListWidget {{ background:{NAVY}; color:white; font-size:{pt(11)}; border:none; }}"
+            "QListWidget::item { padding:13px 10px; } QListWidget::item:selected { background:#1d6fb8; }")
+        self.reports_page.show_report()
+        self.dashboard.load()
+        self.aging_page.load()
 
     # -------- helpers
     def _remember(self, path):
@@ -1457,7 +1506,8 @@ class SystemWindow(QMainWindow):
         if everything:
             reps = []
             for key, _, _ in R.ALL_REPORTS:
-                p = R.Params(params.end, params.n, params.comp, rp.branch.currentText(), rp.view.currentData())
+                p = R.Params(params.end, params.n, params.comp, rp.branch.currentText(), rp.view.currentData(),
+                             rp.supp.currentData() or "type")
                 try:
                     reps.append(R.build(key, self.ctx, p))
                 except Exception:  # noqa: BLE001

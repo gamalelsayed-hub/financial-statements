@@ -156,9 +156,16 @@ def compute(ctx, end):
     supp = ctx.aging("suppliers", end)
     if supp:
         s = AG.suppliers_summary(supp, AG.rates(ctx.db), ctx.base_currency)
-        alerts.append(("warn" if s["overdue"] > 0.5 else "good",
-                       f"الموردون: المتجاوز لفترة الائتمان {s['overdue']:,.0f} {ctx.base_currency} لدى {s['over_count']} مورد"
-                       + (f" — {s['no_rate']} مورد بعملة بلا سعر صرف" if s["no_rate"] else "")))
+        if (ctx.db.setting("supp_view", "type") or "type") == "type":
+            parts = [f"{t} {ts['overdue']:,.0f} ({ts['over_count']})"
+                     for t, ts in AG.suppliers_by_type(supp, AG.rates(ctx.db), ctx.base_currency) if ts["count"]]
+            alerts.append(("warn" if s["overdue"] > 0.5 else "good",
+                           f"الموردون — المتجاوز لفترة الائتمان ({ctx.base_currency}): " + "، ".join(parts)
+                           + (f" — {s['no_rate']} مورد بعملة بلا سعر صرف" if s["no_rate"] else "")))
+        else:
+            alerts.append(("warn" if s["overdue"] > 0.5 else "good",
+                           f"الموردون: المتجاوز لفترة الائتمان {s['overdue']:,.0f} {ctx.base_currency} لدى "
+                           f"{s['over_count']} مورد" + (f" — {s['no_rate']} مورد بعملة بلا سعر صرف" if s["no_rate"] else "")))
 
     # ---------------- chart series (12 months of the year; None when not entered)
     def series(key):
