@@ -183,7 +183,7 @@ def tokens(name):
     return out
 
 
-def guess_classes(items, min_score=0.34):
+def guess_classes(items, min_score=0.34, progress=None):
     """Fill the classification of unclassified items from the most similar classified item.
     1) the name starts with a known «main item» name (longest match) → that main item's usual classification;
     2) otherwise weighted token similarity (rarer words count more, the first word counts double).
@@ -217,7 +217,9 @@ def guess_classes(items, min_score=0.34):
         return w
 
     count = 0
-    for r in items:
+    for i, r in enumerate(items):
+        if progress and i % 50 == 0:
+            progress(i, len(items), "تخمين تصنيف الأصناف غير المصنفة")
         if is_classified(r) and not r.get("guessed"):
             continue
         name = norm(r["name"])
@@ -470,13 +472,15 @@ def _line_text(words):
     return re.sub(r"\)\s*([^()]*?)\s*\(", r"(\1)", s)     # brackets come mirrored in visual order
 
 
-def parse_purchases_pdf(path):
+def parse_purchases_pdf(path, progress=None):
     """Purchases by supplier and item (system report). Returns (last date in the report or None, rows)."""
     import pdfplumber
     rows, last_date = [], None
     supp = {"supp_no": "", "supp_name": "", "currency": ""}
     with pdfplumber.open(path) as pdf:
-        for page in pdf.pages:
+        for n, page in enumerate(pdf.pages):
+            if progress:
+                progress(n, len(pdf.pages), f"صفحة {n + 1}")
             words = page.extract_words()
             if not words:
                 continue
@@ -574,7 +578,7 @@ def _sales_pdf_col(x1):
     return next((name for edge, name in SALES_PDF_COLS if x1 < edge), None)
 
 
-def parse_sales_pdf(path):
+def parse_sales_pdf(path, progress=None):
     """Item sales by customer (system report «إجمالي المبيعات حسب العملاء / الأصناف»): a customer header line
     (customer no., name, currency), then one line per item: quantity, free quantity, sales amount, discount, charges,
     tax, net. Returns ((from date, to date) or None, rows in the by-customer quantities format, check of the lines
@@ -585,7 +589,9 @@ def parse_sales_pdf(path):
     check = {"grand": None, "lines": 0.0, "bad": []}      # the report's own totals against the lines read
     running = 0.0
     with pdfplumber.open(path) as pdf:
-        for page in pdf.pages:
+        for n, page in enumerate(pdf.pages):
+            if progress:
+                progress(n, len(pdf.pages), f"صفحة {n + 1}")
             lines = defaultdict(list)
             for w in page.extract_words():
                 lines[round(w["top"] / 4)].append(w)

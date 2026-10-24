@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QCompleter, QDialog
 
 from .. import importer
 from ..system import items as I
+from .progress import Progress
 from .table_tools import freeze
 
 NAVY = "#12355b"
@@ -192,7 +193,9 @@ class CustomersTab(QWidget):
             return
         QSettings().setValue("last_dir", os.path.dirname(path))
         try:
-            rows = importer.read_table(path)
+            with Progress(self, f"قراءة {os.path.basename(path)}") as bar:
+                bar.step(10, "جاري القراءة")
+                rows = importer.read_table(path)
         except Exception as e:  # noqa: BLE001
             _error(self, f"تعذر قراءة الملف:\n{e}")
             return
@@ -405,10 +408,12 @@ class ItemsTab(QWidget):
         if self.dirty:
             self.save(silent=True)
             vals = list(self.data.values())
-        n = I.guess_classes(vals)
-        self.win.db.save_items(vals)
-        self.win.data_changed(reload_pages=False)
-        self.load()
+        with Progress(self, "تخمين تصنيف الأصناف") as bar:
+            n = I.guess_classes(vals, progress=bar)
+            bar.step(95, "حفظ")
+            self.win.db.save_items(vals)
+            self.win.data_changed(reload_pages=False)
+            self.load()
         _info(self, f"تم تخمين تصنيف {n} صنف — راجعها من «عرض: التخمين».")
 
     def export(self):
@@ -425,15 +430,19 @@ class ItemsTab(QWidget):
         if not path:
             return
         QSettings().setValue("last_dir", os.path.dirname(path))
+        bar = Progress(self, "رفع ملف الأصناف")
         try:
             import openpyxl
+            bar.step(5, f"فتح {os.path.basename(path)}")
             wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
             names = wb.sheetnames
             pick = [n for n in names if I.norm(n) == I.norm("الأصناف")] or names
+            bar.step(20, "قراءة ورقة الأصناف")
             sheets = [(n, [list(r) for r in wb[n].iter_rows(values_only=True)]) for n in pick[:6]]
             wb.close()
             recs = I.read_items_sheets(sheets)
         except Exception as e:  # noqa: BLE001
+            bar.close()
             _error(self, f"تعذر قراءة ملف الأصناف:\n{e}")
             return
         # keep classifications set here by hand for items that are still unclassified in the file
@@ -446,10 +455,13 @@ class ItemsTab(QWidget):
                     r[lv] = o.get(lv, "")
                 kept += 1
         before = sum(1 for r in recs if I.is_classified(r))
-        n = I.guess_classes(recs)
+        bar.title = "رفع ملف الأصناف — تخمين التصنيف"
+        n = I.guess_classes(recs, progress=bar)
+        bar.step(95, f"حفظ {len(recs)} صنف")
         self.win.db.save_items(recs)
         self.win.data_changed(reload_pages=False)
         self.load()
+        bar.close()
         none = sum(1 for r in recs if not I.is_classified(r))
         msg = (f"تم حفظ {len(recs)} صنف: مصنف في الملف {before - kept}"
                + (f"، ومحفوظ تصنيفه من مراجعة سابقة {kept}" if kept else "")

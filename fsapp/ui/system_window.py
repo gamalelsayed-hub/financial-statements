@@ -25,6 +25,7 @@ from ..version import BUILD
 from .aging_view import AgingPage
 from .dashboard_view import DashboardPage
 from .items_view import ItemsPage
+from .progress import Progress
 from . import zoom
 from .table_tools import freeze
 from .zoom import pt
@@ -877,7 +878,11 @@ class DataPage(QWidget):
 
     def _read(self, path):
         try:
-            return importer.read_table(path)
+            with Progress(self, f"قراءة {os.path.basename(path)}") as bar:
+                bar.step(10, "جاري القراءة")
+                rows = importer.read_table(path)
+                bar.step(100, f"{len(rows)} سطر")
+                return rows
         except Exception as e:  # noqa: BLE001
             error(self, f"تعذر قراءة الملف:\n{e}")
             return None
@@ -1011,12 +1016,15 @@ class DataPage(QWidget):
         else:
             groups[bname] = rows[cm.first_row():]
         total_new, report = 0, []
-        for b, brows in groups.items():
+        bar = Progress(self, "حفظ حركة الفروع")
+        for i, (b, brows) in enumerate(groups.items()):
+            bar(i, len(groups), b)
             accs = importer.build_accounts(brows, 0, m)
             data = [(a.code, a.name, a.mov_net) for a in accs if abs(a.mov_net) > 0.004]
             save = db.save_annual_branch if annual_key else db.save_branch_mov
             total_new += len(save(period, b, data))
             report.append(f"{b}: {len(data)} حساب")
+        bar.close()
         msg = f"تم حفظ حركة الفروع لـ {label}:\n" + "\n".join(report)
         if total_new:
             msg += f"\n• {total_new} حساب جديد أضيف لشاشة الربط ويحتاج ربط."
@@ -1126,14 +1134,12 @@ class DataPage(QWidget):
         check_note = ""
         if path.lower().endswith(".pdf"):
             fmt = "qty"
-            QApplication.setOverrideCursor(Qt.WaitCursor)
             try:
-                span, new, check = items.parse_sales_pdf(path)
+                with Progress(self, f"قراءة مبيعات الأصناف: {os.path.basename(path)}") as bar:
+                    span, new, check = items.parse_sales_pdf(path, bar)
             except Exception as e:  # noqa: BLE001
-                QApplication.restoreOverrideCursor()
                 error(self, f"تعذر قراءة ملف الـ PDF:\n{e}")
                 return
-            QApplication.restoreOverrideCursor()
             if span:
                 guess = f"{span[1].year:04d}-{span[1].month:02d}"
                 last_day = calendar.monthrange(span[1].year, span[1].month)[1]
@@ -1181,8 +1187,12 @@ class DataPage(QWidget):
         if had and QMessageBox.question(self, "تأكيد", f"يوجد ملف «{kind}» محفوظ لشهر {calc.month_label(period)}. "
                                         "استبداله؟") != QMessageBox.Yes:
             return
-        merged = items.merge_sales(existing, new, fmt)
-        db.save_item_sales(period, merged)
+        with Progress(self, "حفظ مبيعات الأصناف") as bar:
+            bar.step(30, f"دمج {len(new)} سطر مع المحفوظ")
+            merged = items.merge_sales(existing, new, fmt)
+            bar.step(70, "حفظ")
+            db.save_item_sales(period, merged)
+            bar.step(100, "تم")
         total = sum(r[{"qty": "net", "cost": "cnet", "item": "sales"}[fmt]] or 0 for r in new)
         known = items.customer_info(db)
         unknown = len({r["cust_code"] for r in new if r["cust_code"] not in known and r["cust_code"] != items.ITEM_ONLY})
@@ -1224,7 +1234,8 @@ class DataPage(QWidget):
         guess = self.win.current_period() or self._default_month()
         if path.lower().endswith(".pdf"):
             try:
-                last, rows = items.parse_purchases_pdf(path)
+                with Progress(self, f"قراءة مشتريات الأصناف: {os.path.basename(path)}") as bar:
+                    last, rows = items.parse_purchases_pdf(path, bar)
             except Exception as e:  # noqa: BLE001
                 error(self, f"تعذر قراءة ملف الـ PDF:\n{e}")
                 return
@@ -1757,13 +1768,15 @@ class SystemWindow(QMainWindow):
             return
         if everything:
             reps = []
-            for key, _, _ in R.ALL_REPORTS:
-                p = R.Params(params.end, params.n, params.comp, rp.branch.currentText(), rp.view.currentData(),
-                             rp.supp.currentData() or "type")
-                try:
-                    reps.append(R.build(key, self.ctx, p))
-                except Exception:  # noqa: BLE001
-                    traceback.print_exc()
+            with Progress(self, "تجهيز كل التقارير") as bar:
+                for i, (key, title, _) in enumerate(R.ALL_REPORTS):
+                    bar(i, len(R.ALL_REPORTS), title)
+                    p = R.Params(params.end, params.n, params.comp, rp.branch.currentText(), rp.view.currentData(),
+                                 rp.supp.currentData() or "type")
+                    try:
+                        reps.append(R.build(key, self.ctx, p))
+                    except Exception:  # noqa: BLE001
+                        traceback.print_exc()
             name = f"{self.ctx.company} - التقارير - {calc.month_label(params.end)}"
         else:
             if not rp.current_report:
@@ -1778,11 +1791,15 @@ class SystemWindow(QMainWindow):
         if not path:
             return
         try:
-            if fmt == "xlsx":
-                render.write_excel(reps, self.ctx.company, path)
-            else:
-                wide = any(max((len(b.columns) for b in r.blocks if hasattr(b, "columns")), default=0) > 8 for r in reps)
-                write_pdf(render.reports_html(reps, self.ctx.company), path, landscape=wide)
+            with Progress(self, f"حفظ {os.path.basename(path)}") as bar:
+                bar.step(20, f"كتابة {len(reps)} تقرير")
+                if fmt == "xlsx":
+                    render.write_excel(reps, self.ctx.company, path)
+                else:
+                    wide = any(max((len(b.columns) for b in r.blocks if hasattr(b, "columns")), default=0) > 8
+                               for r in reps)
+                    write_pdf(render.reports_html(reps, self.ctx.company), path, landscape=wide)
+                bar.step(100, "تم")
         except Exception as e:  # noqa: BLE001
             error(self, str(e))
             return

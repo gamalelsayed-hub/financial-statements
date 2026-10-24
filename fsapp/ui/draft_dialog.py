@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog
                                QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem,
                                QVBoxLayout)
 
+from .progress import Progress
 from ..system import calc
 from ..system import draft as DR
 from ..system import draft_export as DX
@@ -231,6 +232,8 @@ class DraftDialog(QDialog):
                                               "Excel (*.xlsx)" if fmt == "xlsx" else "PDF (*.pdf)")
         if not path:
             return
+        bar = Progress(self, f"تصدير {os.path.basename(path)}")
+        bar.step(20, "كتابة القوائم والإيضاحات")
         try:
             if fmt == "xlsx":
                 DX.to_excel(self.dr, self.win.ctx, path, self.opts())
@@ -243,7 +246,10 @@ class DraftDialog(QDialog):
                         fh.write(data)
                 DX.to_pdf(self.dr, self.win.ctx, path, self.opts(), logo)
         except Exception as e:  # noqa: BLE001
+            bar.close()
             QMessageBox.critical(self, "خطأ", f"تعذر التصدير:\n{e}")
             return
+        bar.step(100, "تم")
+        bar.close()
         QSettings().setValue("last_dir", os.path.dirname(path))
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
