@@ -1,0 +1,41 @@
+<section class="practice" id="practice">
+  <h2>تمرين: حوّل فكرتك لوصف دقيق، وخذ الكود</h2>
+  <p class="lead">الكمبيوتر ما يفهم «سوّ لي تقرير حلو». يفهم خطوات واضحة: وش يدخل، وش يصير له بالترتيب، وش يطلع. اكتب وصفك بالعربي هنا، وClaude يقيّم وضوحه، ويقولك وش الناقص، ويكتب الكود مع شرح كل سطر.</p>
+
+  <div class="pr-recipe">
+    <div><b>1. المدخلات</b><span>وش يستلم؟ ملف، رقم، قائمة… وشكلها بالضبط (أعمدة، أمثلة).</span></div>
+    <div><b>2. الخطوات</b><span>بالترتيب، كل خطوة فعل واحد: «اقرأ…»، «لكل صف…»، «لو… وإلا…».</span></div>
+    <div><b>3. المخرجات</b><span>وش يرجّع أو يحفظ أو يطبع؟ وبأي شكل؟</span></div>
+    <div><b>4. الحالات الشاذة</b><span>لو الملف فاضي؟ لو الرقم سالب؟ لو الخانة فاضية؟</span></div>
+  </div>
+
+  <div class="pr-ex"><span>أمثلة تبدأ منها:</span>
+    <button type="button" data-ex="دالة اسمها net_balance تستلم رقمين: المدين والدائن. ترجّع الرصيد = المدين ناقص الدائن. لو أي واحد منهم فاضي (None) اعتبره صفر.">رصيد حساب</button>
+    <button type="button" data-ex="دالة تستلم قائمة حسابات، كل حساب فيه رقم الحساب (نص) والرصيد (رقم). ترجّع مجموع أرصدة الحسابات اللي رقمها يبدأ بـ 4 (الإيرادات) ومجموع اللي يبدأ بـ 5 (المصروفات)، وصافي الربح = الإيرادات + المصروفات (لأن المصروف بالسالب).">صافي الربح</button>
+    <button type="button" data-ex="دالة تقرأ ملف إكسيل، الصف الأول عناوين: كود العميل، اسم العميل، الرصيد. تتجاهل الصفوف الفاضية، وترجّع قاموس مفتاحه كود العميل وقيمته الاسم والرصيد. لو الرصيد مكتوب كنص فيه فواصل مثل 1,250.50 حوّله لرقم.">قراءة إكسيل العملاء</button>
+    <button type="button" data-ex="دالة نسبة النمو تستلم رقم السنة الحالية ورقم السنة الماضية، وترجّع النسبة المئوية للتغير مقربة لرقم عشري واحد. لو السنة الماضية صفر ترجّع None بدل ما تقسم على صفر.">نسبة النمو</button>
+    <button type="button" data-ex="سوي لي تقرير المبيعات">وصف ناقص (جرّبه)</button>
+  </div>
+
+  <label class="pr-lbl" for="pr-in">وصفك:</label>
+  <textarea id="pr-in" rows="6" placeholder="مثال: دالة تستلم … وتسوي … وترجّع …"></textarea>
+  <div class="pr-bar">
+    <button type="button" id="pr-go" class="pr-main">اطلع الكود</button>
+    <button type="button" id="pr-stop" hidden>إيقاف</button>
+    <span id="pr-status" class="pr-status" aria-live="polite"></span>
+  </div>
+  <p id="pr-off" class="pr-off" hidden>هالميزة تشتغل لما تفتح الدليل من حسابك في claude.ai (أول مرة يسألك تسمح للصفحة تستخدم Claude). وتقدر تتمرن بدونها: اكتب وصفك لأي دالة في الدليل قبل ما تقرأ شرحها، وبعدين قارن.</p>
+
+  <div id="pr-out" class="pr-out" hidden>
+    <div class="pr-score"><b id="pr-grade"></b><span id="pr-verdict"></span></div>
+    <div id="pr-miss-box"><h3>وش الناقص في وصفك</h3><ul id="pr-miss"></ul></div>
+    <div id="pr-better-box"><h3>نفس الفكرة بوصف أدق</h3><p id="pr-better"></p></div>
+    <h3>الكود</h3>
+    <div class="code"><button type="button" class="copy">نسخ</button><pre dir="ltr"><code id="pr-code"></code></pre></div>
+    <h3>شرح الكود سطر سطر</h3>
+    <ol id="pr-explain" class="pr-explain"></ol>
+    <div id="pr-try-box"><h3>جرّبه كذا</h3><div class="code"><button type="button" class="copy">نسخ</button><pre dir="ltr"><code id="pr-try"></code></pre></div></div>
+  </div>
+
+  <details class="pr-hist" id="pr-hist-box" hidden><summary>تمارينك السابقة</summary><ul id="pr-hist"></ul></details>
+</section>

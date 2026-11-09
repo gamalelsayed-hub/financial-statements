@@ -1,0 +1,431 @@
+<title>بناء برنامج القوائم المالية</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a ledger-style workbook — sticky index of stages and files on the right, the build steps on the left; each file opens into explanation + its exact code. */
+:root {
+  --paper: #f6f7f4; --sheet: #ffffff; --ink: #1c2430; --muted: #5d6673; --rule: #dde1dc;
+  --accent: #1f5f5b; --accent-soft: #e4efed; --code-bg: #f1f3ef; --code-ink: #23303a;
+  --done: #2f7a3e; --warn-bg: #fbf3e2; --warn-ink: #7a5310;
+  --pin: #c2410c; --c1: #2563eb; --c2: #0d9488; --c3: #c2410c; --c4: #7c3aed;
+  --m-bg: #1e1f24; --m-fg: #d8dbe0; --m-bar: #2a2c33; --m-line: #3a3d46; --m-dim: #8b909a; --m-hi: #ffffff;
+  --m-sel: #37465c; --m-cm: #6fa36a; --m-st: #d69a6e; --m-nu: #b5cea8; --m-mark: #7a3b2a;
+  --f-body: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+  --f-mono: "IBM Plex Mono", "IBM Plex Sans Arabic", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #13181d; --sheet: #1a2027; --ink: #e5e9ec; --muted: #9aa4ae; --rule: #2c343d;
+  --accent: #6fbdb4; --accent-soft: #1d2f30; --code-bg: #10151a; --code-ink: #d6dde3;
+  --done: #74c487; --warn-bg: #2b2416; --warn-ink: #e8c27a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #13181d; --sheet: #1a2027; --ink: #e5e9ec; --muted: #9aa4ae; --rule: #2c343d;
+  --accent: #6fbdb4; --accent-soft: #1d2f30; --code-bg: #10151a; --code-ink: #d6dde3;
+  --done: #74c487; --warn-bg: #2b2416; --warn-ink: #e8c27a; color-scheme: dark }
+* { box-sizing: border-box; }
+body { direction: rtl; text-align: right; background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 15.5px; line-height: 1.75;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.wrap { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 32px; padding-block: 28px 64px; }
+aside { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); align-self: start; max-height: calc(100vh - 32px); overflow: auto;
+  background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 14px; font-size: 13.5px; }
+aside h3 { margin: 0 0 4px; font-size: 14px; }
+.progress { color: var(--muted); font-size: 12.5px; margin-bottom: 10px; font-variant-numeric: tabular-nums; }
+.bar { height: 5px; background: var(--rule); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.bar i { display: block; height: 100%; width: 0; background: var(--done); transition: width .3s; }
+aside ul { list-style: none; margin: 0; padding: 0; }
+.toc-stage { margin-top: 10px; }
+.toc-stage > a { font-weight: 600; color: var(--ink); text-decoration: none; }
+.toc-stage ul li { display: flex; align-items: center; gap: 6px; padding-inline-start: 4px; }
+.toc-stage ul a { color: var(--muted); text-decoration: none; font-family: var(--f-mono); font-size: 12px; overflow-wrap: anywhere; }
+.toc-stage ul a:hover, .toc-stage > a:hover { color: var(--accent); }
+.toc-stage ul li.is-done a { color: var(--done); text-decoration: line-through; }
+input.done { accent-color: var(--done); margin: 0; }
+main { min-width: 0; }
+.hero { background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; padding: 26px 28px; }
+.hero h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; text-wrap: balance; }
+.hero p { margin: 0 0 10px; max-width: 68ch; color: var(--muted); }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 14px; font-size: 13.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.facts b { color: var(--ink); font-size: 18px; margin-inline-end: 4px; }
+.guide { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
+.guide section { background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 18px; min-width: 0; }
+.guide h2 { font-size: 16px; margin: 0 0 6px; }
+.guide ol, .guide ul { margin: 0; padding-inline-start: 20px; }
+.stage { margin-top: 40px; }
+.stage > h2 { font-size: 22px; margin: 0 0 6px; padding-bottom: 6px; border-bottom: 2px solid var(--accent); text-wrap: balance; }
+.lead { max-width: 75ch; margin: 8px 0 12px; }
+.filelist { display: flex; flex-wrap: wrap; gap: 6px 10px; padding: 0; list-style: none; counter-reset: f; margin: 0 0 14px; }
+.filelist li { counter-increment: f; font-size: 13px; }
+.filelist li::before { content: counter(f) "."; color: var(--muted); margin-inline-end: 4px; }
+.filelist a { font-family: var(--f-mono); color: var(--accent); }
+details.file { background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; margin: 12px 0; }
+details.file > summary { cursor: pointer; padding: 12px 16px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline; list-style-position: inside; }
+details.file[open] > summary { border-bottom: 1px solid var(--rule); }
+details.file.is-done > summary .fname::after { content: "  ✓ خلصت"; color: var(--done); font-family: var(--f-body); font-size: 13px; }
+.fname { font-family: var(--f-mono); font-weight: 500; font-size: 15px; }
+.meta { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.fintro { padding: 12px 18px 4px; background: var(--accent-soft); }
+.fintro p { margin: 0 0 8px; max-width: 80ch; }
+.piece { padding: 14px 18px; border-top: 1px dashed var(--rule); }
+.piece:first-of-type { border-top: 0; }
+.piece header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+.kind { font-size: 11.5px; letter-spacing: .02em; padding: 1px 8px; border-radius: 4px; border: 1px solid var(--rule); color: var(--muted); }
+.k-func, .k-method { color: var(--accent); border-color: var(--accent); }
+.k-class { background: var(--accent); color: var(--sheet); border-color: var(--accent); }
+.pname { font-family: var(--f-mono); font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.lines { margin-inline-start: auto; color: var(--muted); font-family: var(--f-mono); font-size: 11.5px; }
+.desc { max-width: 82ch; }
+.desc code, .fintro code, .lead code, .check code { font-family: var(--f-mono); font-size: .88em; background: var(--code-bg); padding: 0 4px; border-radius: 3px; }
+.desc p { margin: 0 0 6px; }
+.desc ol, .desc ul { margin: 2px 0 8px; padding-inline-start: 22px; }
+.code { position: relative; margin-top: 8px; }
+.code pre { margin: 0; background: var(--code-bg); color: var(--code-ink); border: 1px solid var(--rule); border-radius: 8px; padding: 34px 14px 12px;
+  overflow-x: auto; font-family: var(--f-mono); font-size: 13px; line-height: 1.55; text-align: left; tab-size: 4; }
+.copy { position: absolute; top: 6px; left: 6px; font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 5px; border: 1px solid var(--rule);
+  background: var(--sheet); color: var(--muted); cursor: pointer; }
+.copy:hover, .copy:focus-visible { color: var(--accent); border-color: var(--accent); }
+.check { margin-top: 14px; background: var(--warn-bg); color: var(--warn-ink); border-radius: 8px; padding: 12px 16px; max-width: 90ch; }
+/* ---- beginner section */
+[dir="ltr"] { text-align: left; }
+.errs td[dir="ltr"] { text-align: right; }
+.start { margin-top: 32px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; padding: 22px 24px; }
+.start > h2 { font-size: 22px; margin: 0 0 4px; text-wrap: balance; }
+.start h3 { font-size: 18px; margin: 0 0 8px; display: flex; gap: 10px; align-items: center; }
+.start h4 { font-size: 15px; margin: 14px 0 6px; }
+.start .block { padding-top: 18px; margin-top: 18px; border-top: 1px solid var(--rule); }
+.start p, .start li { max-width: 78ch; }
+.start pre code { white-space: pre; background: none; padding: 0; font-size: inherit; border-radius: 0; }
+.start :not(pre) > code { white-space: nowrap; }
+.start code { font-family: var(--f-mono); font-size: .88em; background: var(--code-bg); padding: 0 4px; border-radius: 3px; }
+.num { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--sheet); font-size: 14px; flex: none; }
+.pin { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 10px; background: var(--pin); color: #fff; font-size: 12px; font-style: normal; font-weight: 700; font-family: var(--f-body); }
+.flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 10px 0 4px; }
+.fbox { flex: 1 1 140px; border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; background: var(--paper); display: grid; gap: 2px; }
+.fbox span { color: var(--muted); font-size: 13px; }
+.farrow { align-self: center; color: var(--accent); font-size: 20px; }
+.mock-wrap { margin: 12px 0; }
+.mock-wrap figcaption { color: var(--muted); font-size: 13.5px; margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.mock { background: var(--m-bg); color: var(--m-fg); border-radius: 8px; overflow: hidden; font-family: var(--f-mono); font-size: 12.5px; border: 1px solid var(--m-line); max-width: 760px; }
+.mock .bar { background: var(--m-bar); padding: 6px 10px; display: flex; gap: 6px; align-items: center; color: var(--m-dim); font-size: 12px; }
+.mock .bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--m-line); display: inline-block; }
+.mock .bar span { margin-inline-start: 8px; }
+.mock pre { margin: 0; padding: 12px 14px; white-space: pre-wrap; overflow-x: auto; line-height: 1.6; }
+.mock pre b { color: var(--m-hi); font-weight: 600; }
+.mock mark { background: var(--m-mark); color: var(--m-hi); padding: 0 2px; }
+.vsc-body { display: grid; grid-template-columns: 34px 170px minmax(0, 1fr); min-height: 260px; }
+.act { background: var(--m-bar); display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 10px; color: var(--m-dim); font-size: 16px; }
+.act .ext { position: relative; }
+.act .ext .pin { position: absolute; top: -8px; left: 12px; }
+.side { border-right: 1px solid var(--m-line); padding: 6px 0; font-size: 12px; overflow: hidden; }
+.side-h { color: var(--m-dim); padding: 2px 10px 6px; display: flex; gap: 6px; align-items: center; letter-spacing: .04em; }
+.side .t { padding: 2px 10px; white-space: nowrap; }
+.side .l1 { padding-left: 22px; } .side .l2 { padding-left: 34px; }
+.side .sel { background: var(--m-sel); }
+.main-col { display: flex; flex-direction: column; min-width: 0; }
+.tabs { display: flex; align-items: center; gap: 8px; background: var(--m-bar); padding-right: 8px; }
+.tab { padding: 5px 12px; color: var(--m-dim); font-size: 12px; }
+.tab.on { background: var(--m-bg); color: var(--m-fg); }
+.ed { flex: 1; white-space: pre; }
+.ed .ln { color: var(--m-dim); display: inline-block; width: 22px; }
+.ed .cm { color: var(--m-cm); } .ed .st { color: var(--m-st); } .ed .nu { color: var(--m-nu); }
+.termp { border-top: 1px solid var(--m-line); }
+.tree { font-family: var(--f-mono); font-size: 13px; background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; overflow-x: auto; text-align: left; }
+.tr { display: flex; align-items: center; gap: 8px; padding: 1px 0; white-space: nowrap; }
+.tr.d1 { padding-left: 18px; } .tr.d2 { padding-left: 36px; } .tr.d3 { padding-left: 54px; }
+.tr .dir { color: var(--accent); font-weight: 600; }
+.tr a { color: var(--ink); text-decoration: none; } .tr a:hover { color: var(--accent); text-decoration: underline; }
+.chip { display: inline-grid; place-items: center; min-width: 20px; height: 18px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-size: 11px; font-family: var(--f-body); }
+.chip.c0 { background: var(--rule); color: var(--muted); }
+.tnote { color: var(--muted); font-family: var(--f-body); font-size: 12px; }
+.imp { background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px; padding: 14px; margin: 10px 0; overflow-x: auto; }
+.imp-line { font-family: var(--f-mono); font-size: 15px; margin-bottom: 12px; white-space: nowrap; }
+.imp-line .kw { color: var(--muted); }
+.seg { padding: 1px 5px; border-radius: 4px; border-bottom: 3px solid; }
+.imp-map { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.imp-map .m { border-top: 3px solid; padding: 6px 8px; background: var(--sheet); border-radius: 4px; display: grid; }
+.imp-map .m span { color: var(--muted); font-size: 12.5px; text-align: right; }
+.imp-map .m b { text-align: left; }
+.s1 { border-color: var(--c1) !important; } .s2 { border-color: var(--c2) !important; } .s3 { border-color: var(--c3) !important; } .s4 { border-color: var(--c4) !important; }
+.concepts { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; margin-top: 10px; }
+.concept { border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; background: var(--paper); min-width: 0; }
+.concept h4 { margin: 0 0 6px; }
+.concept ul, .concept ol { margin: 8px 0 0; padding-inline-start: 20px; font-size: 14.5px; }
+.concept .code pre { padding: 10px 12px; }
+.errs { overflow-x: auto; margin: 10px 0; }
+.errs table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+.errs th { background: var(--accent); color: var(--sheet); font-weight: 600; text-align: right; padding: 6px 10px; }
+.errs td { border-bottom: 1px solid var(--rule); padding: 6px 10px; vertical-align: top; }
+.errs td[dir="ltr"] { font-family: var(--f-mono); font-size: 13px; text-align: right; }
+@media (max-width: 600px) { .vsc-body { grid-template-columns: 30px 120px minmax(0, 1fr); } .concepts { grid-template-columns: minmax(0, 1fr); } }
+a:focus-visible, summary:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Mind map */
+.mm { margin-top: 22px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; padding: 20px 22px; }
+.mm h2 { margin: 0 0 4px; font-size: 20px; }
+.mm .lead { color: var(--muted); margin: 0 0 12px; }
+.mm-now { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-weight: 500; }
+.mm-now a { color: var(--accent); font-family: var(--f-mono); font-size: 13.5px; }
+.mm-root { display: flex; justify-content: center; position: relative; padding-bottom: 18px; }
+.mm-root span { background: var(--accent); color: var(--sheet); border-radius: 999px; padding: 8px 22px; font-weight: 700; font-size: 16px; position: relative; z-index: 1; }
+.mm-root::after { content: ""; position: absolute; bottom: 0; left: 50%; width: 2px; height: 18px; background: var(--rule); }
+.mm-branches { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; border-top: 2px solid var(--rule); padding-top: 14px; }
+.mm-br { --b: var(--c1); border: 1px solid var(--rule); border-top: 4px solid var(--b); border-radius: 9px; padding: 10px 12px; min-width: 0; position: relative; }
+.mm-br::before { content: ""; position: absolute; top: -20px; right: 50%; width: 2px; height: 14px; background: var(--rule); }
+.mm-br.b1 { --b: var(--c2); } .mm-br.b2 { --b: var(--c3); } .mm-br.b3 { --b: var(--c4); } .mm-br.b4 { --b: var(--accent); }
+.mm-st { display: flex; align-items: baseline; gap: 8px; text-decoration: none; color: var(--ink); font-weight: 600; font-size: 14px; line-height: 1.5; }
+.mm-st b { background: var(--b); color: var(--sheet); border-radius: 50%; min-width: 22px; height: 22px; display: inline-grid; place-items: center; font-size: 12px; flex: none; }
+.mm-st span { flex: 1; }
+.mm-cnt { font-style: normal; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 500; }
+.mm-br ul { list-style: none; margin: 8px 0 0; padding: 0 12px 0 0; border-right: 2px solid var(--rule); display: flex; flex-direction: column; gap: 4px; }
+.mm-br li { position: relative; }
+.mm-br li::before { content: ""; position: absolute; right: -12px; top: 50%; width: 9px; height: 2px; background: var(--rule); }
+.mm-f { display: inline-block; font-family: var(--f-mono); font-size: 12px; text-decoration: none; color: var(--ink); background: var(--code-bg); border: 1px solid var(--rule); border-radius: 6px; padding: 1px 8px; max-width: 100%; overflow-wrap: anywhere; }
+.mm-f:hover { border-color: var(--accent); }
+.mm-f.is-done { background: var(--done); border-color: var(--done); color: var(--sheet); }
+.mm-f.is-done::after { content: " ✓"; }
+.mm-f.is-next { border: 2px solid var(--pin); font-weight: 500; }
+.mm-f.is-next::before { content: "أنت هنا ← "; font-family: var(--f-body); color: var(--pin); }
+.mm-br.is-full { border-color: var(--done); }
+.mm-br.is-full .mm-cnt { color: var(--done); font-weight: 700; }
+/* Practice */
+.practice { margin-top: 40px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; padding: 20px 22px; }
+.practice h2 { margin: 0 0 6px; font-size: 22px; }
+.practice h3 { font-size: 15.5px; margin: 18px 0 6px; }
+.practice .lead { color: var(--muted); max-width: 72ch; }
+.pr-recipe { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin: 14px 0; }
+.pr-recipe div { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; font-size: 14px; }
+.pr-recipe b { color: var(--accent); }
+.pr-ex { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 14px; font-size: 14px; color: var(--muted); }
+.practice button { font: inherit; font-size: 14px; border: 1px solid var(--rule); background: var(--sheet); color: var(--ink); border-radius: 7px; padding: 5px 12px; cursor: pointer; }
+.practice button:hover { border-color: var(--accent); }
+.practice button.pr-main { background: var(--accent); color: var(--sheet); border-color: var(--accent); font-weight: 600; padding: 7px 20px; }
+.practice button:disabled { opacity: .55; cursor: default; }
+.pr-lbl { font-weight: 600; display: block; margin-bottom: 4px; }
+#pr-in { width: 100%; font: inherit; font-size: 15px; line-height: 1.8; background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; resize: vertical; }
+#pr-in:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pr-bar { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.pr-status { color: var(--muted); font-size: 14px; }
+.pr-off { background: var(--warn-bg); color: var(--warn-ink); border-radius: 8px; padding: 10px 14px; margin-top: 12px; }
+.pr-out { margin-top: 18px; border-top: 1px solid var(--rule); padding-top: 6px; }
+.pr-score { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
+.pr-score b { font-size: 22px; border-radius: 8px; padding: 2px 12px; background: var(--accent-soft); color: var(--accent); font-variant-numeric: tabular-nums; }
+.pr-score b.low { background: var(--warn-bg); color: var(--warn-ink); }
+#pr-miss li { margin-bottom: 4px; }
+#pr-better { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; margin: 0; }
+.pr-explain li { margin-bottom: 6px; }
+.pr-explain code { font-family: var(--f-mono); font-size: 13px; background: var(--code-bg); padding: 1px 6px; border-radius: 4px; white-space: pre-wrap; }
+.pr-hist { margin-top: 18px; }
+.pr-hist summary { cursor: pointer; font-weight: 600; }
+.pr-hist li { margin: 4px 0; }
+.pr-hist button { font-size: 13px; padding: 2px 8px; text-align: right; }
+@media (max-width: 900px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); }
+  aside { position: static; max-height: none; }
+}
+@media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</style>
+
+<div class="wrap" dir="rtl" lang="ar">
+<aside>
+  <h3>الفهرس</h3>
+  <div class="progress"><span id="prog">خلصت 0 من {{NF}} ملف</span><div class="bar"><i id="progbar"></i></div></div>
+  <ul><li class="toc-stage"><a href="#map">خريطة البرنامج: أنت فين</a></li><li class="toc-stage"><a href="#practice">تمرين: من وصف إلى كود</a></li><li class="toc-stage"><a href="#start">ابدأ من هنا (للمبتدئ)</a></li>{{TOC}}</ul>
+</aside>
+<main>
+  <div class="hero">
+    <h1>بناء برنامج القوائم المالية بنفسك</h1>
+    <p>هذا هو الكود الحقيقي للبرنامج (نسخة 16) مقطّع على مراحل بالترتيب اللي تكتبه فيه. لكل ملف: وش دوره، ثم كل دالة فيه: وش تسوي خطوة خطوة، وتحتها كودها كما هو بالحرف.</p>
+    <p>كل مرحلة تنتهي بتجربة صغيرة تتأكد فيها إن اللي كتبته شغال قبل ما تنتقل للي بعدها.</p>
+    <div class="facts"><span><b>{{NF}}</b>ملف</span><span><b>{{NP}}</b>جزء (دالة، كلاس، ثوابت)</span><span><b>{{NL}}</b>سطر كود</span><span><b>9</b>مراحل</span></div>
+  </div>
+  {{MAP}}
+  <div class="guide">
+    <section><h2>طريقة الاستخدام</h2><ol>
+      <li>اقرأ شرح الملف، ثم شرح أول دالة.</li>
+      <li>اكتب كودها بيدك في ملفك (الكتابة تعلّمك أكثر من النسخ، وزر «نسخ» للتأكد).</li>
+      <li>كمّل الدوال بالترتيب لين يخلص الملف، وعلّم عليه في الفهرس.</li>
+      <li>بعد آخر ملف في المرحلة سوّ التجربة المكتوبة تحتها.</li>
+    </ol></section>
+    <section><h2>ثلاث طبقات</h2><ul>
+      <li><b>البيانات:</b> قاعدة SQLite وملف لكل شركة، وقراءة ملفات الإكسيل والـ PDF.</li>
+      <li><b>الحسابات:</b> القوائم والتقارير والفحوصات، ما تعرف شي عن الشاشات فتجربها لحالها.</li>
+      <li><b>الشاشات:</b> PySide6، تقرأ من الطبقتين وترسم.</li>
+    </ul></section>
+    <section><h2>ثلاث قواعد محاسبية</h2><ul>
+      <li>كل رصيد = مدين − دائن (موجب مدين، سالب دائن).</li>
+      <li>المركز المالي: الأصول بإشارتها، والخصوم وحقوق الملكية بعكسها.</li>
+      <li>قائمة الدخل بعكس الإشارة: الإيراد موجب والمصروف سالب. الفترة = الحركة، ومن بداية السنة = الختامي.</li>
+    </ul></section>
+  </div>
+  {{BASICS}}
+  {{PRACTICE}}
+  {{BODY}}
+</main>
+</div>
+
+<script>
+document.documentElement.setAttribute("dir", "rtl");
+document.documentElement.setAttribute("lang", "ar");
+(function () {
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest(".copy");
+    if (!b) return;
+    var code = b.parentElement.querySelector("code");
+    var done = function () { b.textContent = "تم النسخ"; setTimeout(function () { b.textContent = "نسخ"; }, 1400); };
+    var fallback = function () {
+      var r = document.createRange(); r.selectNodeContents(code);
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "محدد — Ctrl+C";
+    };
+    try { navigator.clipboard.writeText(code.textContent).then(done, fallback); } catch (err) { fallback(); }
+  });
+  var KEY = "fs-guide-done";
+  var state = {};
+  try { state = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { state = {}; }
+  var boxes = Array.prototype.slice.call(document.querySelectorAll("input.done"));
+  function paint() {
+    var n = 0;
+    boxes.forEach(function (bx) {
+      var on = !!state[bx.dataset.f]; bx.checked = on; if (on) n++;
+      bx.closest("li").classList.toggle("is-done", on);
+      var d = document.getElementById(bx.dataset.f); if (d) d.classList.toggle("is-done", on);
+    });
+    var next = null;
+    Array.prototype.forEach.call(document.querySelectorAll(".mm-f"), function (a) {
+      var on = !!state[a.dataset.f];
+      a.classList.toggle("is-done", on); a.classList.remove("is-next");
+      if (!on && !next) next = a;
+    });
+    if (next) next.classList.add("is-next");
+    Array.prototype.forEach.call(document.querySelectorAll(".mm-br"), function (br) {
+      var fs = br.querySelectorAll(".mm-f"), d = br.querySelectorAll(".mm-f.is-done").length;
+      br.querySelector(".mm-cnt").textContent = d + "/" + fs.length;
+      br.classList.toggle("is-full", d === fs.length);
+    });
+    var now = document.getElementById("mm-now");
+    if (now) {
+      now.textContent = "";
+      if (next) {
+        var st = next.closest(".mm-br").querySelector(".mm-st span").textContent;
+        now.append("خلصت " + n + " من " + boxes.length + " ملف. الدور على: ");
+        var l = document.createElement("a"); l.href = next.getAttribute("href"); l.textContent = next.title; l.dir = "ltr";
+        now.append(l, " (مرحلة: " + st + ")");
+      } else { now.textContent = "خلصت كل الملفات. مبروك، البرنامج كامل بيدك."; }
+    }
+    document.getElementById("prog").textContent = "خلصت " + n + " من " + boxes.length + " ملف";
+    document.getElementById("progbar").style.width = (boxes.length ? n * 100 / boxes.length : 0) + "%";
+  }
+  boxes.forEach(function (bx) {
+    bx.addEventListener("change", function () {
+      state[bx.dataset.f] = bx.checked;
+      try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+      paint();
+    });
+  });
+  paint();
+  function openHash() {
+    var id = location.hash.slice(1); if (!id) return;
+    var el = document.getElementById(id);
+    if (el && el.tagName === "DETAILS") { el.open = true; el.scrollIntoView(); }
+  }
+  window.addEventListener("hashchange", openHash);
+  openHash();
+  var first = document.querySelector("details.file"); if (first && !location.hash) first.open = true;
+})();
+</script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var inp = $("pr-in"), go = $("pr-go"), stop = $("pr-stop"), status = $("pr-status");
+  var HK = "fs-guide-practice", DK = "fs-guide-practice-draft";
+  var hist = [];
+  try { hist = JSON.parse(localStorage.getItem(HK) || "[]") || []; } catch (e) { hist = []; }
+  try { inp.value = localStorage.getItem(DK) || ""; } catch (e) {}
+  inp.addEventListener("input", function () { try { localStorage.setItem(DK, inp.value); } catch (e) {} });
+  Array.prototype.forEach.call(document.querySelectorAll(".pr-ex button"), function (b) {
+    b.addEventListener("click", function () { inp.value = b.dataset.ex; inp.dispatchEvent(new Event("input")); inp.focus(); });
+  });
+
+  var RULES = [
+    "أنت مدرّس برمجة بايثون لمحاسب مبتدئ تمامًا يتعلم يحوّل الأفكار إلى وصف دقيق ثم إلى كود.",
+    "المتعلم يبني برنامج قوائم مالية بلغة Python 3 (مكتبات: sqlite3، openpyxl للإكسيل، pdfplumber للـ PDF، PySide6 للشاشات).",
+    "سيعطيك وصفًا بالعربي لدالة أو جزء برنامج. مهمتك:",
+    "1) قيّم دقة الوصف من 10: هل حدد المدخلات وشكلها، والخطوات بالترتيب، والمخرجات، والحالات الشاذة؟",
+    "2) اذكر ما ينقص الوصف بنقاط قصيرة بالعربي البسيط (أسئلة كان لازم يجاوبها). لو الوصف كامل اترك القائمة فاضية.",
+    "3) اكتب نفس الفكرة بوصف أدق كمثال يتعلم منه (فقرة قصيرة).",
+    "4) اكتب الكود: بايثون بسيط وقصير وواضح، أسماء متغيرات إنجليزية مفهومة، بدون تعقيد زائد، دالة واحدة غالبًا. لو الوصف ناقص جدًا افترض أبسط افتراض معقول واذكر الافتراض في الملاحظات الناقصة. التعليقات داخل الكود بالعربي قليلة.",
+    "5) اشرح الكود: لكل سطر أو مجموعة أسطر مهمة، السطر نفسه وشرحه بالعربي البسيط (ليش موجود، وش يسوي).",
+    "6) اكتب مثال تجربة قصير يشغّل الدالة ويطبع النتيجة، مع النتيجة المتوقعة كتعليق.",
+    "اكتب كل الشرح بالعربي بلهجة بسيطة. لا تستخدم أي علامات markdown داخل النصوص.",
+    "رد بـ JSON فقط بهذا الشكل بالضبط:",
+    '{"score": 7, "verdict": "جملة قصيرة عن الوصف", "missing": ["..."], "better": "...", "code": "...", "explain": [{"line": "...", "why": "..."}], "try": "..."}'
+  ].join("\n");
+
+  function esc(t) { return String(t == null ? "" : t); }
+  function show(r, desc) {
+    $("pr-out").hidden = false;
+    var sc = Math.max(0, Math.min(10, Number(r.score) || 0));
+    var g = $("pr-grade"); g.textContent = sc + "/10"; g.classList.toggle("low", sc < 7);
+    $("pr-verdict").textContent = esc(r.verdict);
+    var miss = $("pr-miss"); miss.textContent = "";
+    (Array.isArray(r.missing) ? r.missing : []).forEach(function (m) { var li = document.createElement("li"); li.textContent = esc(m); miss.append(li); });
+    $("pr-miss-box").hidden = !miss.children.length;
+    $("pr-better").textContent = esc(r.better); $("pr-better-box").hidden = !r.better;
+    $("pr-code").textContent = esc(r.code);
+    var ex = $("pr-explain"); ex.textContent = "";
+    (Array.isArray(r.explain) ? r.explain : []).forEach(function (x) {
+      var li = document.createElement("li"), c = document.createElement("code"); c.dir = "ltr"; c.textContent = esc(x && x.line);
+      li.append(c, document.createElement("br"), esc(x && x.why)); ex.append(li);
+    });
+    $("pr-try").textContent = esc(r["try"]); $("pr-try-box").hidden = !r["try"];
+  }
+  function paintHist() {
+    var ul = $("pr-hist"); ul.textContent = "";
+    $("pr-hist-box").hidden = !hist.length;
+    hist.forEach(function (h) {
+      var li = document.createElement("li"), b = document.createElement("button");
+      b.type = "button"; b.textContent = (h.r.score != null ? h.r.score + "/10 · " : "") + h.d.slice(0, 90) + (h.d.length > 90 ? "…" : "");
+      b.addEventListener("click", function () { inp.value = h.d; show(h.r); $("pr-out").scrollIntoView({ block: "start" }); });
+      li.append(b); ul.append(li);
+    });
+  }
+  paintHist();
+
+  var MSG = {
+    not_granted: "ما انسمح للصفحة تستخدم Claude. تقدر تسمح من قائمة الصلاحيات في الصفحة وتعيد فتحها.",
+    sampling_disabled: "Claude مو متاح لهالحساب.",
+    rate_limited: "طلبات كثيرة ورا بعض أو خلص حد الاستخدام. انتظر شوي وجرّب.",
+    session_expired: "سجّل دخولك مرة ثانية.",
+    refused: "ما قدر يجاوب على هالوصف. غيّر صياغته.",
+    invalid_json: "الرد طلع بشكل غير متوقع. اضغط الزر مرة ثانية.",
+    prompt_too_large: "الوصف طويل جدًا. اختصره."
+  };
+  var HIDE = { not_granted: 1, sampling_disabled: 1, not_declared: 1, capability_disabled: 1, capability_removed: 1 };
+  var sample = null, ctl = null;
+  go.disabled = true; status.textContent = "جاري التجهيز…";
+  (window.claude ? window.claude.use("sample") : Promise.resolve(null)).then(function (s) {
+    sample = s; status.textContent = "";
+    if (!s) { $("pr-off").hidden = false; go.hidden = true; return; }
+    go.disabled = false;
+  }, function () { $("pr-off").hidden = false; go.hidden = true; status.textContent = ""; });
+
+  stop.addEventListener("click", function () { if (ctl) ctl.abort(); });
+  go.addEventListener("click", function () {
+    var d = inp.value.trim();
+    if (!d) { status.textContent = "اكتب وصفك أول."; inp.focus(); return; }
+    ctl = new AbortController();
+    go.disabled = true; stop.hidden = false; status.textContent = "يفكر… (ممكن ياخذ دقيقة)";
+    sample.json(RULES + "\n\nوصف المتعلم:\n" + d, { signal: ctl.signal }).then(function (r) {
+      if (!r || typeof r !== "object") throw { code: "invalid_json" };
+      show(r);
+      hist.unshift({ d: d, r: r }); hist = hist.slice(0, 15);
+      try { localStorage.setItem(HK, JSON.stringify(hist)); } catch (e) {}
+      paintHist(); status.textContent = "";
+      $("pr-out").scrollIntoView({ block: "start", behavior: "smooth" });
+    }, function (e) {
+      var c = e && e.code;
+      if (c === "cancelled") { status.textContent = "توقف."; return; }
+      status.textContent = MSG[c] || "صار خطأ في الاتصال. جرّب مرة ثانية.";
+      if (HIDE[c]) { $("pr-off").hidden = false; go.hidden = true; }
+    }).then(function () { go.disabled = false; stop.hidden = true; });
+  });
+})();
+</script>

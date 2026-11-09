@@ -1,0 +1,342 @@
+<section class="start" id="start">
+  <h2>ابدأ من هنا: لو أنت جديد على البرمجة</h2>
+  <p class="lead">اقرأ هذا القسم مرة وحدة قبل المرحلة الأولى. فيه الأدوات اللي تحتاجها، وكيف ملفات البرنامج مرتبة، وأساسيات بايثون اللي بتشوفها في كل الكود، وكيف تتعامل مع الأخطاء.</p>
+
+  <!-- ===================================================== 1 -->
+  <div class="block">
+    <h3><span class="num">1</span> وش يعني «برنامج بايثون» أصلًا؟</h3>
+    <p>البرنامج مجرد ملفات نصية عادية تنتهي بـ <bdi dir="ltr"><code>.py</code></bdi>، تكتب فيها أوامر بلغة بايثون. لما تشغّل البرنامج، بايثون يقرأ الملف من أول سطر لآخره وينفذ الأوامر بالترتيب. وبرنامجنا 34 ملف، كل ملف مسؤول عن جزء، والملفات تستدعي بعض.</p>
+    <div class="flow" dir="rtl">
+      <div class="fbox"><b>أنت تكتب</b><span>أوامر في ملف نصي</span></div>
+      <div class="farrow">←</div>
+      <div class="fbox"><b dir="ltr">main.py</b><span>ملف ينتهي بـ .py</span></div>
+      <div class="farrow">←</div>
+      <div class="fbox"><b>بايثون يقرأ وينفذ</b><span dir="ltr">python main.py</span></div>
+      <div class="farrow">←</div>
+      <div class="fbox"><b>النتيجة</b><span>نافذة البرنامج أو رقم أو ملف</span></div>
+    </div>
+  </div>
+
+  <!-- ===================================================== 2 -->
+  <div class="block">
+    <h3><span class="num">2</span> كيف يفكر المبرمج: كأنك تكلم موظف ينفذ حرفيًا</h3>
+    <p>الكمبيوتر موظف سريع جدًا، ما يتعب ولا يغلط في الحساب، بس عنده عيب واحد: <b>ما يخمّن أبدًا</b>. ينفذ اللي قلته بالحرف، لا أكثر ولا أقل. البرمجة يعني تكلمه بالتفاصيل وبالترتيب: روح، افتح، لكل صف، لو كذا سوّ كذا، اجمع، هات النتيجة.</p>
+    <p>لو قلت لمحاسب عندك «طلّع لي مبيعات أكتوبر لكل عميل»، بيفهم لحاله إنه يتجاهل الصفوف الفاضية، ويعتبر المبلغ الفاضي صفر، ويرتب من الأكبر، ويفهم التاريخ لو مكتوب بشكل غريب. الكمبيوتر ما يعرف أي شي من هذا إلا إذا قلته له. عشان كذا نص أي كود تقريبًا شروط من نوع «لو فاضي… لو نص… لو برا الفترة…».</p>
+
+    <h4>الطريقة بأربع خطوات، وبهالترتيب</h4>
+    <div class="flow" dir="rtl">
+      <div class="fbox"><b>1. افهم المطلوب</b><span>وش يدخل، وش يطلع، وبأي شكل بالضبط</span></div>
+      <div class="farrow">←</div>
+      <div class="fbox"><b>2. خمّن كل اللي يخرب النتيجة</b><span>كل احتمال في البيانات ممكن يطلّع رقم غلط</span></div>
+      <div class="farrow">←</div>
+      <div class="fbox"><b>3. اكتب الخطوات بالعربي</b><span>كأنك تشرحها لموظف أول يوم شغله</span></div>
+      <div class="farrow">←</div>
+      <div class="fbox"><b>4. حوّلها لكود</b><span>كل سطر عربي يقابله سطر أو سطرين</span></div>
+    </div>
+
+    <h4>الخطوة 1: افهم إيش تحتاج</h4>
+    <p>قبل أي سطر كود، جاوب على ثلاث أسئلة: <b>وش المدخلات</b> (ملف؟ أي أعمدة؟ أي شيت؟)، <b>وش المخرجات</b> (رقم؟ جدول؟ ملف إكسيل؟ مرتب كيف؟)، و<b>وش القاعدة</b> اللي تحول هذا لذاك (جمع؟ فلتر؟ مقارنة؟). لو ما تقدر تشرحها لإنسان بوضوح، ما تقدر تكتبها لكمبيوتر.</p>
+
+    <h4>الخطوة 2: خمّن كل الاحتمالات اللي تخلي النتيجة غلط</h4>
+    <p>هذي أهم خطوة، وهي اللي تفرق كود يشتغل مرة عن كود تعتمد عليه. اسأل نفسك: <b>«وش ممكن يكون غلط في البيانات؟»</b> وكل جواب يصير شرط <bdi dir="ltr"><code>if</code></bdi> في الكود. وهنا ميزتك كمحاسب: أنت تعرف أصلًا وين البيانات تخرب.</p>
+    <div class="errs">
+      <table>
+        <thead><tr><th>الاحتمال</th><th>وش يصير لو تجاهلته</th><th>وش تقول للكمبيوتر</th></tr></thead>
+        <tbody>
+          <tr><td>صف فاضي أو خانة فاضية</td><td>خطأ في الجمع، أو عميل اسمه None</td><td>لو الصف فاضي اتركه، ولو المبلغ فاضي اعتبره صفر</td></tr>
+          <tr><td>رقم مكتوب كنص <bdi dir="ltr">"1,500"</bdi></td><td>TypeError أو يتجاهل المبلغ</td><td>شيل الفواصل وحوّله لرقم</td></tr>
+          <tr><td>تاريخ بأكثر من شكل</td><td>صفوف تطلع برا الفترة بالغلط</td><td>لو نص حوّله لتاريخ، ووحّد الشكل</td></tr>
+          <tr><td>تاريخ فيه وقت</td><td>آخر يوم في الفترة ينقص</td><td>قارن على التاريخ بس بدون الساعة</td></tr>
+          <tr><td>نفس العميل بمسافة زيادة أو اسم مختلف شوي</td><td>العميل يطلع مرتين بمجموعين</td><td>شيل المسافات، واعتمد على الكود بدل الاسم</td></tr>
+          <tr><td>الأعمدة ترتيبها تغير</td><td>المبلغ ينقرأ من عمود الفرع</td><td>دوّر على العمود باسم العنوان</td></tr>
+          <tr><td>قسمة على صفر (نسبة نمو والسنة الماضية صفر)</td><td>ZeroDivisionError والبرنامج يوقف</td><td>لو المقام صفر رجّع «لا يوجد» بدل القسمة</td></tr>
+          <tr><td>الملف نفسه مو موجود أو مفتوح</td><td>البرنامج يوقف برسالة طويلة</td><td>تأكد إنه موجود، وطلّع رسالة مفهومة</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>الخطوة 3: اكتب الخطوات بالعربي (pseudocode)</h4>
+    <p>المبرمجين المحترفين يسوونها. مثال لتقرير مبيعات العملاء من إكسيل:</p>
+    <div class="code"><button type="button" class="copy">نسخ</button><pre dir="rtl" style="text-align:right;font-family:var(--f-body);line-height:1.9"><code style="font-family:inherit">1. افتح ملف المبيعات
+2. لكل صف من الصف الثاني:
+   - لو الصف كله فاضي ← اتركه
+   - لو العميل أو التاريخ فاضي ← اتركه
+   - لو التاريخ نص ← حوّله لتاريخ
+   - لو التاريخ برا الفترة ← اتركه
+   - لو المبلغ فاضي ← اعتبره صفر
+   - زِد المبلغ على مجموع العميل
+3. رتّب العملاء من الأكبر للأصغر
+4. لو طلب أكبر N ← خذ أول N بس
+5. رجّع النتيجة</code></pre></div>
+
+    <h4>الخطوة 4: حوّلها لكود، والكلمات اللي تحتاجها قليلة</h4>
+    <div class="errs">
+      <table>
+        <thead><tr><th>كلامك بالعربي</th><th>في بايثون</th></tr></thead>
+        <tbody>
+          <tr><td>افتح الملف</td><td dir="ltr">load_workbook(path)</td></tr>
+          <tr><td>احفظ هالقيمة باسم</td><td dir="ltr">total = 0</td></tr>
+          <tr><td>لكل صف</td><td dir="ltr">for row in rows:</td></tr>
+          <tr><td>لو كذا … وإلا</td><td dir="ltr">if …: … else: …</td></tr>
+          <tr><td>اتركه وكمّل</td><td dir="ltr">continue</td></tr>
+          <tr><td>زِد عليه</td><td dir="ltr">total = total + amount</td></tr>
+          <tr><td>جدول اسم ← قيمة</td><td dir="ltr">totals = {}</td></tr>
+          <tr><td>رتّب</td><td dir="ltr">sorted(…)</td></tr>
+          <tr><td>هات النتيجة</td><td dir="ltr">return result</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>ومع ذلك: لازم تتعلم أساسيات اللغة نفسها</h4>
+    <p>التفكير بالخطوات هو نص الشغل، والنص الثاني إنك تعرف <b>تتكلم لغة الكمبيوتر</b>. زي اللي يعرف وش يبي يقول بس لازم يعرف كلمات وقواعد اللغة عشان يقوله. في بايثون هذا يعني:</p>
+    <ul>
+      <li><b>المفردات:</b> أنواع البيانات (رقم، نص، تاريخ، <bdi dir="ltr"><code>None</code></bdi>)، والقائمة <bdi dir="ltr"><code>[ ]</code></bdi>، والقاموس <bdi dir="ltr"><code>{ }</code></bdi>، والمتغيرات.</li>
+      <li><b>التراكيب:</b> <bdi dir="ltr"><code>if</code></bdi> و <bdi dir="ltr"><code>for</code></bdi> و <bdi dir="ltr"><code>def</code></bdi> و <bdi dir="ltr"><code>return</code></bdi> و <bdi dir="ltr"><code>import</code></bdi>، وكيف تتداخل مع بعض.</li>
+      <li><b>القواعد:</b> الإزاحة (4 مسافات) هي اللي تحدد وش داخل وش، والنقطتين <bdi dir="ltr"><code>:</code></bdi> قبل أي كتلة، والترقيم يبدأ من صفر، والحروف الكبيرة والصغيرة تفرق.</li>
+      <li><b>المكتبات:</b> ما تحفظها، تعرف إنها موجودة وتدور على طريقة استخدامها وقت الحاجة (openpyxl للإكسيل، sqlite3 لقاعدة البيانات، datetime للتواريخ).</li>
+    </ul>
+    <p>والأخبار الحلوة: الأساسيات محدودة، وتشوفها كلها في البطاقات العشر تحت (القسم 6) ومن كود البرنامج نفسه. <b>ما تحتاج تحفظ</b>: تفهم الفكرة، وتعرف وش تدوّر عليه، والتكرار يثبتها لحاله.</p>
+    <p><b>تمرّن عليها:</b> في قسم «تمرين: من وصف إلى كود» تحت، اكتب وصفك ماشي على الخطوات الأربع، وشوف كم درجتك. لو نقصت، غالبًا نسيت احتمال من الخطوة 2.</p>
+  </div>
+
+  <div class="block">
+    <h3><span class="num">3</span> الأدوات: بايثون و VS Code</h3>
+    <p><b>بايثون</b> هو اللي يشغّل الكود. و<b>VS Code</b> برنامج كتابة (زي الوورد بس للكود): يلوّن الكود، ويكتشف الأخطاء وأنت تكتب، وفيه شاشة أوامر تحت. الاثنين مجانيين.</p>
+    <h4>أولًا: تأكد إن بايثون موجود</h4>
+    <ol>
+      <li>اضغط زر ويندوز، واكتب <bdi dir="ltr"><code>cmd</code></bdi>، واضغط Enter. تنفتح شاشة سوداء اسمها «موجه الأوامر».</li>
+      <li>اكتب <bdi dir="ltr"><code>python --version</code></bdi> واضغط Enter.</li>
+      <li>لو طلع رقم 3.10 أو أحدث فأنت جاهز. لو طلعت رسالة إنه مو موجود، نزّله من python.org، ووقت التثبيت علّم على <bdi dir="ltr"><code>Add python.exe to PATH</code></bdi> (مهم جدًا، بدونه موجه الأوامر ما يعرف بايثون).</li>
+    </ol>
+    <figure class="mock-wrap">
+      <div class="mock term" dir="ltr">
+        <div class="bar"><i></i><i></i><i></i><span>Command Prompt</span></div>
+        <pre>C:\Users\Gamal&gt; <b>python --version</b>
+Python 3.12.4
+
+C:\Users\Gamal&gt; _</pre>
+      </div>
+      <figcaption>هذا اللي المفروض تشوفه: اللي بالخط العريض أنت تكتبه، والسطر اللي تحته رد الجهاز.</figcaption>
+    </figure>
+
+    <h4>ثانيًا: ثبّت VS Code وجهّز مجلد المشروع</h4>
+    <ol>
+      <li>نزّل VS Code من code.visualstudio.com وثبّته.</li>
+      <li>افتحه، واضغط أيقونة الإضافات (رقم <span class="pin">4</span> في الرسمة تحت)، وابحث عن Python وثبّت الإضافة اللي ناشرها Microsoft.</li>
+      <li>سوّ مجلد فاضي على جهازك، مثلًا <bdi dir="ltr"><code>C:\fsapp-project</code></bdi>.</li>
+      <li>في VS Code: <bdi dir="ltr"><code>File → Open Folder</code></bdi> واختر المجلد. يطلع اسمه في شريط الملفات (رقم <span class="pin">1</span>).</li>
+      <li>لإنشاء مجلد أو ملف: وقف بالماوس على شريط الملفات، وبتطلع أيقونتين صغار: «ملف جديد» و«مجلد جديد». أو كليك يمين ← New File / New Folder.</li>
+      <li>اكتب الكود في منطقة الكتابة (رقم <span class="pin">2</span>)، واحفظ بـ <bdi dir="ltr"><code>Ctrl + S</code></bdi>. النقطة البيضاء جنب اسم الملف تعني إنه مو محفوظ.</li>
+      <li>افتح شاشة الأوامر من القائمة: <bdi dir="ltr"><code>Terminal → New Terminal</code></bdi> (رقم <span class="pin">3</span>). هنا تكتب أوامر التثبيت والتشغيل والتجارب، وهي مفتوحة على مجلد المشروع مباشرة.</li>
+      <li>أول أمر تكتبه هناك يثبت المكتبات الأربع اللي يحتاجها البرنامج:</li>
+    </ol>
+    <div class="code"><button type="button" class="copy">نسخ</button><pre dir="ltr"><code>pip install PySide6==6.12.0 openpyxl==3.1.5 pdfplumber==0.11.10 certifi==2024.8.30</code></pre></div>
+
+    <figure class="mock-wrap">
+      <div class="mock vsc" dir="ltr">
+        <div class="bar"><i></i><i></i><i></i><span>version.py — fsapp-project — Visual Studio Code</span></div>
+        <div class="vsc-body">
+          <div class="act"><span>▣</span><span>⌕</span><span class="ext">⊞<em class="pin">4</em></span></div>
+          <div class="side">
+            <div class="side-h">EXPLORER <em class="pin">1</em></div>
+            <div class="t">▾ FSAPP-PROJECT</div>
+            <div class="t l1">▾ fsapp</div>
+            <div class="t l2">▸ system</div>
+            <div class="t l2">▸ ui</div>
+            <div class="t l2">__init__.py</div>
+            <div class="t l2 sel">version.py</div>
+            <div class="t l1">main.py</div>
+          </div>
+          <div class="main-col">
+            <div class="tabs"><span class="tab on">version.py ●</span><em class="pin">2</em></div>
+            <pre class="ed"><span class="ln">1</span><span class="cm"># Build number of this copy of the program.</span>
+<span class="ln">2</span><span class="cm"># 0 means a development copy.</span>
+<span class="ln">3</span>BUILD = <span class="nu">0</span>
+<span class="ln">4</span>REPO = <span class="st">"gamalelsayed-hub/financial-statements"</span>
+<span class="ln">5</span><span class="cm"># public repository with the downloads only</span>
+<span class="ln">6</span>RELEASES_REPO = <span class="st">"gamalelsayed-hub/financial-statements-releases"</span></pre>
+            <div class="termp"><div class="tabs"><span class="tab on">TERMINAL</span><em class="pin">3</em></div>
+              <pre>PS C:\fsapp-project&gt; <b>python main.py</b></pre></div>
+          </div>
+        </div>
+      </div>
+      <figcaption>
+        <span class="pin">1</span> شريط الملفات والمجلدات &nbsp;
+        <span class="pin">2</span> منطقة كتابة الكود &nbsp;
+        <span class="pin">3</span> شاشة الأوامر (Terminal) &nbsp;
+        <span class="pin">4</span> الإضافات (Extensions)
+      </figcaption>
+    </figure>
+  </div>
+
+  <!-- ===================================================== 3 -->
+  <div class="block">
+    <h3><span class="num">4</span> شجرة ملفات البرنامج</h3>
+    <p>هذا الشكل النهائي لمجلد المشروع. الرقم جنب كل ملف هو المرحلة اللي تكتبه فيها. المجلدات بلون، والملفات بلون ثاني، واضغط على أي ملف ينقلك لشرحه.</p>
+    <div class="tree" dir="ltr">{{TREE}}</div>
+  </div>
+
+  <!-- ===================================================== 4 -->
+  <div class="block">
+    <h3><span class="num">5</span> ليش ملف <bdi dir="ltr"><code>__init__.py</code></bdi>؟</h3>
+    <p><b>تشبيه:</b> تخيل البرنامج عمارة، وكل مجلد غرفة. بايثون ما يدخل أي غرفة إلا لو على بابها لوحة مكتوب فيها «هذي الغرفة جزء من البرنامج». ملف <bdi dir="ltr"><code>__init__.py</code></bdi> هو هاللوحة. وجوده بس يكفي، فيبقى فاضي تمامًا بدون أي كود.</p>
+    <p>المجلد اللي فيه هالملف يسمونه في بايثون <b>«حزمة» (package)</b>. فعشان كذا عندنا ثلاث نسخ منه، وحدة في كل مجلد: <bdi dir="ltr"><code>fsapp</code></bdi> و <bdi dir="ltr"><code>fsapp/system</code></bdi> و <bdi dir="ltr"><code>fsapp/ui</code></bdi>.</p>
+    <p><b>وين يفرق؟</b> في سطور الاستيراد (import) اللي تجيب كود من ملف ثاني. شوف كيف بايثون يقرأ هالسطر كأنه عنوان:</p>
+    <div class="imp" dir="ltr">
+      <div class="imp-line"><span class="kw">from</span> <span class="seg s1">fsapp</span>.<span class="seg s2">system</span>.<span class="seg s3">db</span> <span class="kw">import</span> <span class="seg s4">CompanyDB</span></div>
+      <div class="imp-map" dir="ltr">
+        <div class="m s1"><b dir="ltr">fsapp</b><span dir="rtl">مجلد، ولازم فيه <bdi dir="ltr">__init__.py</bdi></span></div>
+        <div class="m s2"><b dir="ltr">system</b><span dir="rtl">مجلد داخله، ولازم فيه <bdi dir="ltr">__init__.py</bdi></span></div>
+        <div class="m s3"><b dir="ltr">db</b><span dir="rtl">الملف <bdi dir="ltr">db.py</bdi> (نكتبه بدون .py)</span></div>
+        <div class="m s4"><b dir="ltr">CompanyDB</b><span dir="rtl">الكلاس المكتوب داخل الملف</span></div>
+      </div>
+    </div>
+    <p>يعني: «روح لمجلد fsapp، ثم مجلد system، ثم ملف db.py، وجيب منه CompanyDB». لو نسيت <bdi dir="ltr"><code>__init__.py</code></bdi> في أي مجلد من الطريق، يطلع لك الخطأ <bdi dir="ltr"><code>ModuleNotFoundError</code></bdi>.</p>
+    <p><b>والنقطة في بداية الاستيراد؟</b> بتشوف داخل الملفات سطور مثل <bdi dir="ltr"><code>from . import defaults</code></bdi> و <bdi dir="ltr"><code>from ..system import calc</code></bdi>:</p>
+    <ul>
+      <li>نقطة وحدة <bdi dir="ltr"><code>.</code></bdi> = «من نفس المجلد اللي أنا فيه».</li>
+      <li>نقطتين <bdi dir="ltr"><code>..</code></bdi> = «من المجلد اللي فوقي». مثلًا ملف داخل ui يكتب <bdi dir="ltr"><code>..system</code></bdi> عشان يطلع لـ fsapp ثم يدخل system.</li>
+    </ul>
+  </div>
+
+  <!-- ===================================================== 5 -->
+  <div class="block">
+    <h3><span class="num">6</span> أساسيات بايثون من كود البرنامج نفسه</h3>
+    <p>هذي أكثر الأشياء اللي بتتكرر في كل الملفات. كل مثال مأخوذ من البرنامج، وتحته ترجمته بالكلام العادي.</p>
+    <div class="concepts">
+
+      <div class="concept">
+        <h4>التعليق (ملاحظة لك، بايثون يتجاهلها)</h4>
+        <div class="code"><pre dir="ltr"><code># 0 means a development copy
+"""Report builders. Every report is a list of tables."""</code></pre></div>
+        <ul><li>أي سطر يبدأ بـ <bdi dir="ltr"><code>#</code></bdi> ملاحظة.</li><li>النص بين ثلاث علامات تنصيص <bdi dir="ltr"><code>"""</code></bdi> في أول ملف أو دالة اسمه docstring: وصف للملف أو الدالة.</li></ul>
+      </div>
+
+      <div class="concept">
+        <h4>المتغير: اسم تحفظ فيه قيمة</h4>
+        <div class="code"><pre dir="ltr"><code>BUILD = 0
+REPO = "gamalelsayed-hub/financial-statements"</code></pre></div>
+        <ul><li><bdi dir="ltr"><code>=</code></bdi> تعني «احفظ». فالسطر الأول: احفظ الرقم صفر باسم BUILD.</li><li>النص لازم بين علامتي تنصيص، والرقم بدونها.</li><li>الاسم كله حروف كبيرة = اتفاق بين المبرمجين إنه ثابت ما يتغير.</li></ul>
+      </div>
+
+      <div class="concept">
+        <h4>القائمة (list): مجموعة قيم بالترتيب</h4>
+        <div class="code"><pre dir="ltr"><code>BS_SECTIONS = ["CA", "NCA", "CL", "NCL", "EQ"]
+BS_SECTIONS[0]      # → "CA"   (العد يبدأ من صفر)</code></pre></div>
+        <ul><li>بين قوسين مربعين <bdi dir="ltr"><code>[ ]</code></bdi> والعناصر بينها فاصلة.</li><li>تجيب عنصر برقمه، وأول عنصر رقمه 0.</li></ul>
+      </div>
+
+      <div class="concept">
+        <h4>القاموس (dict): كل مفتاح وقيمته</h4>
+        <div class="code"><pre dir="ltr"><code>SECTION_NAMES = {"CA": "الأصول المتداولة", "CL": "الخصوم المتداولة"}
+SECTION_NAMES["CA"]   # → "الأصول المتداولة"</code></pre></div>
+        <ul><li>بين قوسين معقوفين <bdi dir="ltr"><code>{ }</code></bdi>، وكل زوج «مفتاح: قيمة».</li><li>زي جدول من عمودين: تعطيه المفتاح ويرجع القيمة. البرنامج يستخدمه كثير، مثلًا {رقم الحساب: بياناته}.</li></ul>
+      </div>
+
+      <div class="concept">
+        <h4>الدالة (def): مجموعة أوامر لها اسم</h4>
+        <div class="code"><pre dir="ltr"><code>def month_label(p):
+    return f"{MONTHS_AR[int(p[5:7]) - 1]} {p[:4]}"
+
+month_label("2026-09")   # → "سبتمبر 2026"</code></pre></div>
+        <ol><li><bdi dir="ltr"><code>def</code></bdi> = «عرّف دالة»، واسمها month_label، وتاخذ قيمة وحدة اسمها p (الشهر).</li><li><bdi dir="ltr"><code>p[5:7]</code></bdi> يقص الحروف من 5 إلى 7: من "2026-09" يطلع "09"، و <bdi dir="ltr"><code>int</code></bdi> يحوله لرقم 9.</li><li>ناقص واحد لأن قائمة الشهور تبدأ من صفر، فيجيب «سبتمبر»، ويضيف السنة <bdi dir="ltr"><code>p[:4]</code></bdi>.</li><li><bdi dir="ltr"><code>return</code></bdi> = «رجّع هالنتيجة لمن ناداني».</li><li><bdi dir="ltr"><code>f"..."</code></bdi> نص تقدر تحط داخله قيم بين <bdi dir="ltr"><code>{ }</code></bdi>.</li></ol>
+      </div>
+
+      <div class="concept">
+        <h4>الشرط (if): نفذ فقط لو...</h4>
+        <div class="code"><pre dir="ltr"><code>def safe_div(a, b):
+    if a is None or b is None or abs(b) &lt; 1e-9:
+        return None
+    return a / b</code></pre></div>
+        <ul><li>بالعربي: «لو أ فاضي، أو ب فاضي، أو ب صفر تقريبًا، رجّع لا شي. وإلا رجّع أ ÷ ب».</li><li><bdi dir="ltr"><code>None</code></bdi> = «لا شي / فاضي». و <bdi dir="ltr"><code>1e-9</code></bdi> رقم صغير جدًا (0.000000001).</li><li>فايدتها: القسمة على صفر في بايثون تطلع خطأ وتوقف البرنامج، فهالدالة تحمي النسب منه.</li></ul>
+      </div>
+
+      <div class="concept">
+        <h4>التكرار (for): كرر لكل عنصر</h4>
+        <div class="code"><pre dir="ltr"><code>total = 0
+for a in accounts:
+    total = total + a.close_net</code></pre></div>
+        <ul><li>بالعربي: «ابدأ المجموع بصفر، وامشِ على الحسابات واحد واحد (كل واحد اسمه a)، وأضف ختامه للمجموع».</li><li>بتشوف كثير الشكل المختصر: <bdi dir="ltr"><code>sum(a.close_net for a in accounts)</code></bdi> ويعني نفس الشي في سطر واحد.</li></ul>
+      </div>
+
+      <div class="concept">
+        <h4>الإزاحة: المسافات أول السطر لها معنى</h4>
+        <div class="code"><pre dir="ltr"><code>def safe_div(a, b):
+····if b == 0:
+········return None
+····return a / b</code></pre></div>
+        <ul><li>كل نقطة <bdi dir="ltr"><code>·</code></bdi> هنا تمثل مسافة. السطور اللي تحت <bdi dir="ltr"><code>def</code></bdi> أو <bdi dir="ltr"><code>if</code></bdi> أو <bdi dir="ltr"><code>for</code></bdi> لازم تتأخر 4 مسافات عشان بايثون يعرف إنها «داخلها».</li><li>السطر الأخير بأربع مسافات بس، يعني خارج الـ if لكن داخل الدالة.</li><li>VS Code يسويها لك تلقائيًا بعد النقطتين <bdi dir="ltr"><code>:</code></bdi> ولما تضغط Tab.</li></ul>
+      </div>
+
+      <div class="concept">
+        <h4>الكلاس (class): قالب يجمع بيانات ودوال</h4>
+        <div class="code"><pre dir="ltr"><code>class CompanyDB:
+    def __init__(self, path):
+        self.path = path
+        self.con = sqlite3.connect(path)
+
+    def periods(self):
+        ...
+
+db = CompanyDB("test.fsdb")   # نسخة من القالب
+db.periods()                  # دالة من دوالها</code></pre></div>
+        <ul><li>تشبيه: الكلاس «نموذج استمارة»، وكل نسخة منه استمارة معبّاة. CompanyDB قالب، و db استمارة لشركة معينة.</li><li><bdi dir="ltr"><code>__init__</code></bdi> الدالة اللي تشتغل أول ما تنشئ نسخة (تجهيز). و <bdi dir="ltr"><code>self</code></bdi> تعني «هالنسخة نفسها»، فـ <bdi dir="ltr"><code>self.path</code></bdi> = «المسار الخاص بهالنسخة».</li><li>الدوال داخل الكلاس تتنادى بنقطة: <bdi dir="ltr"><code>db.periods()</code></bdi>.</li></ul>
+      </div>
+
+      <div class="concept">
+        <h4>الاستيراد (import): استخدم كود من ملف ثاني</h4>
+        <div class="code"><pre dir="ltr"><code>import sqlite3                     # مكتبة جاهزة مع بايثون
+from openpyxl import Workbook      # مكتبة ثبتناها بـ pip
+from .calc import month_label      # ملف من برنامجنا</code></pre></div>
+        <ul><li>ثلاث أنواع: مكتبات جاهزة مع بايثون، ومكتبات تثبتها بـ <bdi dir="ltr"><code>pip install</code></bdi>، وملفات برنامجك. والنوع الثالث هو اللي يحتاج <bdi dir="ltr"><code>__init__.py</code></bdi>.</li><li>عشان كذا ترتيب المراحل مهم: ما تقدر تستورد من ملف لسا ما كتبته.</li></ul>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===================================================== 6 -->
+  <div class="block">
+    <h3><span class="num">7</span> كيف تجرب كودك وتقرأ الأخطاء</h3>
+    <p>آخر كل مرحلة فيه «جرّب قبل ما تكمل». التجربة تكون في شاشة الأوامر داخل VS Code: تكتب <bdi dir="ltr"><code>python</code></bdi> وتضغط Enter، فتتحول الشاشة لوضع بايثون (يطلع <bdi dir="ltr"><code>&gt;&gt;&gt;</code></bdi>). كل سطر تكتبه يتنفذ فورًا ويطلع جوابه. وللخروج تكتب <bdi dir="ltr"><code>exit()</code></bdi>.</p>
+    <figure class="mock-wrap">
+      <div class="mock term" dir="ltr">
+        <div class="bar"><i></i><i></i><i></i><span>TERMINAL</span></div>
+        <pre>PS C:\fsapp-project&gt; <b>python</b>
+Python 3.12.4 ...
+&gt;&gt;&gt; <b>from fsapp.system.calc import month_add, month_label</b>
+&gt;&gt;&gt; <b>month_add("2026-01", -1)</b>
+'2025-12'
+&gt;&gt;&gt; <b>month_label("2026-09")</b>
+'سبتمبر 2026'
+&gt;&gt;&gt; <b>exit()</b></pre>
+      </div>
+      <figcaption>اللي بالخط العريض أنت تكتبه، والباقي رد بايثون. لو الجواب طلع زي المتوقع، دالتك شغالة.</figcaption>
+    </figure>
+    <p><b>شكل رسالة الخطأ:</b> لو فيه غلط يطلع نص طويل اسمه Traceback. <b>اقرأ آخر سطر أول</b>: فيه نوع الخطأ وسببه. والسطر اللي فوقه فيه اسم الملف ورقم السطر اللي فيه الغلط.</p>
+    <figure class="mock-wrap">
+      <div class="mock term" dir="ltr">
+        <div class="bar"><i></i><i></i><i></i><span>TERMINAL</span></div>
+        <pre>Traceback (most recent call last):
+  File "C:\fsapp-project\fsapp\system\calc.py", <mark>line 25</mark>, in month_add
+    i = y * 12 + (m - 1) + k
+<mark>NameError: name 'y' is not defined</mark></pre>
+      </div>
+      <figcaption>المعنى: في ملف calc.py السطر 25، استخدمت اسم y قبل ما تعرّفه (غالبًا السطر اللي قبله ناقص أو مكتوب غلط).</figcaption>
+    </figure>
+    <div class="errs">
+      <table>
+        <thead><tr><th>الخطأ</th><th>معناه</th><th>الحل الغالب</th></tr></thead>
+        <tbody>
+          <tr><td dir="ltr">IndentationError</td><td>المسافات في أول السطر غلط</td><td>قارن الإزاحة بالكود في الدليل (4 مسافات لكل مستوى)</td></tr>
+          <tr><td dir="ltr">SyntaxError</td><td>كتابة غلط: قوس أو نقطتين أو علامة تنصيص ناقصة</td><td>شوف السطر المذكور والسطر اللي قبله</td></tr>
+          <tr><td dir="ltr">ModuleNotFoundError</td><td>بايثون ما لقى الملف أو المكتبة</td><td>تأكد من <bdi dir="ltr">__init__.py</bdi> في كل مجلد، واسم الملف، وإنك ثبتت المكتبات بـ pip</td></tr>
+          <tr><td dir="ltr">NameError</td><td>اسم مستخدم قبل ما يتعرّف</td><td>غلطة إملائية في الاسم، أو سطر import ناقص</td></tr>
+          <tr><td dir="ltr">AttributeError</td><td>طلبت شي مو موجود داخل كائن</td><td>اسم دالة أو خانة مكتوب غلط بعد النقطة</td></tr>
+          <tr><td dir="ltr">KeyError</td><td>مفتاح مو موجود في قاموس</td><td>تأكد من المفتاح (حروف كبيرة وصغيرة تفرق)</td></tr>
+          <tr><td dir="ltr">TypeError</td><td>نوع قيمة غلط، أو عدد قيم غلط للدالة</td><td>قارن نداء الدالة بتعريفها</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><b>نصيحة:</b> لو علّقت في خطأ، انسخ رسالة الخطأ كاملة وأرسلها لي، وأقولك وين الغلط بالضبط.</p>
+  </div>
+</section>
