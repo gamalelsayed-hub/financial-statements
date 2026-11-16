@@ -32,16 +32,19 @@ STAGES = [
      "check": ("from fsapp.system import draft as DR, draft_export as DX ثم dr = DR.build(ctx, '2026-02') ثم DR.bs_totals(dr.cur.bs)['diff'] (صفر) ثم "
                "DX.to_excel(dr, ctx, 'draft.xlsx', {}).")},
     {"id": "s6", "title": "المرحلة 6: الأصناف ومبيعاتها ومشترياتها",
-     "files": ["fsapp/system/items.py", "fsapp/system/item_reports.py"],
-     "intro": "قراءة ملفات الأصناف والمبيعات والمشتريات (Excel و PDF) وتقاريرها. بعد item_reports.py رجّع سطر استيراده في reports.py.",
-     "check": "from fsapp.system import items as I ثم span, rows, check = I.parse_sales_pdf('مبيعات.pdf') ثم len(rows) و check['grand'].",},
+     "files": ["fsapp/system/items.py", "fsapp/system/item_reports.py", "fsapp/system/rep_data.py", "fsapp/system/reps.py"],
+     "intro": ("قراءة ملفات الأصناف والمبيعات والمشتريات (Excel و PDF) وتقاريرها. بعد item_reports.py رجّع سطر استيراده في reports.py. "
+               "وآخرها تقييم المناديب: rep_data.py يقرأ تقارير النظام (المبيعات بالمندوب، الفواتير، سندات القبض)، و reps.py يحسب الدرجة والتقارير."),
+     "check": ("from fsapp.system import items as I ثم span, rows, check = I.parse_sales_pdf('مبيعات.pdf') ثم len(rows) و check['grand']. "
+               "وللمناديب: from fsapp.system import reps as RP ثم ev = RP.evaluate(db, ['2026-01', '2026-02']) ثم "
+               "[(r.name, r.score, r.grade) for r in ev.ordered()].")},
     {"id": "s7", "title": "المرحلة 7: الاستيراد من نموذج الإكسيل القديم (اختياري)",
      "files": ["fsapp/system/migrate.py"],
      "intro": "تحتاجه بس لو بتنقل شركة من نموذج الإكسيل القديم. تقدر تأجله.",
      "check": "from fsapp.system import migrate ثم migrate.migrate('النموذج.xlsx', CompanyDB('new.fsdb')) — يطبع ملخص كل جزء انستورد."},
     {"id": "s8", "title": "المرحلة 8: الشاشات وتشغيل البرنامج",
      "files": ["fsapp/ui/zoom.py", "fsapp/ui/progress.py", "fsapp/ui/table_tools.py", "fsapp/i18n.py",
-               "fsapp/ui/aging_view.py", "fsapp/ui/dashboard_view.py", "fsapp/ui/items_view.py", "fsapp/ui/draft_dialog.py",
+               "fsapp/ui/aging_view.py", "fsapp/ui/dashboard_view.py", "fsapp/ui/items_view.py", "fsapp/ui/reps_view.py", "fsapp/ui/draft_dialog.py",
                "fsapp/updater.py", "fsapp/ui/system_window.py", "main.py"],
      "intro": ("الأدوات الصغيرة أول (الزوم، العداد، تثبيت العمود)، ثم الصفحات، ثم النافذة الرئيسية، وآخر شي main.py. "
                "i18n.py من وضع التحليل السريع لكن main.py يستورده، فتكتبه هنا. "

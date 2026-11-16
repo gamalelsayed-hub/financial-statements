@@ -48,6 +48,21 @@ CREATE TABLE IF NOT EXISTS annual_tb(
     PRIMARY KEY(period, code));
 CREATE TABLE IF NOT EXISTS annual_branch(
     period TEXT, branch TEXT, code TEXT, name TEXT, amount REAL, PRIMARY KEY(period, branch, code));
+CREATE TABLE IF NOT EXISTS rep_master(
+    code TEXT PRIMARY KEY, name TEXT, nationality TEXT DEFAULT '', salary REAL DEFAULT 0, target REAL DEFAULT 0,
+    other REAL DEFAULT 0, active INTEGER DEFAULT 1, note TEXT DEFAULT '');
+CREATE TABLE IF NOT EXISTS rep_commission(period TEXT, code TEXT, amount REAL, PRIMARY KEY(period, code));
+CREATE TABLE IF NOT EXISTS rep_sales(
+    kind TEXT, p_from TEXT, p_to TEXT, rep TEXT, rep_name TEXT, key TEXT, name TEXT, net REAL, cost REAL,
+    PRIMARY KEY(kind, p_from, p_to, rep, key));
+CREATE TABLE IF NOT EXISTS invoices(
+    id INTEGER PRIMARY KEY, period TEXT, inv_no TEXT, itype TEXT, date TEXT, acct TEXT, cust_name TEXT,
+    net REAL, cost REAL);
+CREATE INDEX IF NOT EXISTS invoices_period ON invoices(period);
+CREATE TABLE IF NOT EXISTS receipts(
+    id INTEGER PRIMARY KEY, period TEXT, vno TEXT, date TEXT, vtype TEXT, box TEXT, acct TEXT, acct_name TEXT,
+    analytic TEXT, amount REAL);
+CREATE INDEX IF NOT EXISTS receipts_period ON receipts(period);
 """
 
 CUSTOMER_FIELDS = ["no", "name", "region", "branch", "rep", "cls", "ctype", "b0", "b1", "b2", "b3", "b4", "guarantee"]
@@ -57,6 +72,9 @@ ITEM_FIELDS = ["code", "name", "unit", "grp_main", "grp_sub1", "grp_sub2", "main
                "guessed", "guess_from", "guess_score"]
 SALES_FIELDS = ["cust_code", "cust_name", "item_code", "item_name", "unit", "qty", "free_qty", "sales", "ret_qty",
                 "returns", "net_qty", "net", "cnet", "cost"]
+REP_FIELDS = ["code", "name", "nationality", "salary", "target", "other", "active", "note"]
+INVOICE_FIELDS = ["inv_no", "itype", "date", "acct", "cust_name", "net", "cost"]
+RECEIPT_FIELDS = ["vno", "date", "vtype", "box", "acct", "acct_name", "analytic", "amount"]
 PURCHASE_FIELDS = ["supp_no", "supp_name", "currency", "item_code", "item_name", "unit", "qty", "net"]
 
 LISTS = {
@@ -214,7 +232,8 @@ class CompanyDB:
         return self.ensure_accounts([(r[0], r[1]) for r in rows])
 
     def delete_period(self, period):
-        for table in ("tb", "branch_mov", "customers", "suppliers", "item_sales", "item_purchases"):
+        for table in ("tb", "branch_mov", "customers", "suppliers", "item_sales", "item_purchases", "invoices",
+                      "receipts"):
             self.con.execute(f"DELETE FROM {table} WHERE period=?", (period,))
         self.con.commit()
 
@@ -372,6 +391,91 @@ class CompanyDB:
         for p, b in self.con.execute("SELECT DISTINCT period, branch FROM annual_branch ORDER BY branch"):
             out.setdefault(p, [0, []])[1].append(b)
         return out
+
+    # ---------------- sales reps: master data, commissions, sales by rep, invoices, receipts
+    def reps(self):
+        cur = self.con.execute(f"SELECT {', '.join(REP_FIELDS)} FROM rep_master ORDER BY code")
+        return {r[0]: dict(zip(REP_FIELDS, r)) for r in cur}
+
+    def save_reps(self, rows, replace=True):
+        if replace:
+            self.con.execute("DELETE FROM rep_master")
+        self.con.executemany(f"INSERT OR REPLACE INTO rep_master VALUES({','.join('?' * len(REP_FIELDS))})",
+                             [tuple(r.get(f) for f in REP_FIELDS) for r in rows])
+        self.con.commit()
+
+    def commissions(self):
+        """{period: {rep code: amount}}"""
+        out = {}
+        for p, code, amt in self.con.execute("SELECT period, code, amount FROM rep_commission"):
+            out.setdefault(p, {})[code] = amt
+        return out
+
+    def save_commissions(self, period, amounts):
+        """amounts: {rep code: amount}. Replaces the month."""
+        self.con.execute("DELETE FROM rep_commission WHERE period=?", (period,))
+        self.con.executemany("INSERT INTO rep_commission VALUES(?,?,?)",
+                             [(period, c, a) for c, a in amounts.items() if a])
+        self.con.commit()
+
+    def save_rep_sales(self, kind, p_from, p_to, rows):
+        """kind: items | customers. rows: dicts rep, rep_name, key, name, net, cost. Replaces that file's months."""
+        self.con.execute("DELETE FROM rep_sales WHERE kind=? AND p_from=? AND p_to=?", (kind, p_from, p_to))
+        self.con.executemany(
+            "INSERT OR REPLACE INTO rep_sales VALUES(?,?,?,?,?,?,?,?,?)",
+            [(kind, p_from, p_to, r["rep"], r["rep_name"], r["key"], r["name"], r["net"], r["cost"]) for r in rows])
+        self.con.commit()
+
+    def rep_sales(self, kind):
+        cols = ["p_from", "p_to", "rep", "rep_name", "key", "name", "net", "cost"]
+        cur = self.con.execute(f"SELECT {', '.join(cols)} FROM rep_sales WHERE kind=?", (kind,))
+        return [dict(zip(cols, r)) for r in cur]
+
+    def rep_sales_files(self):
+        """[(kind, from, to, rows, net)]"""
+        return self.con.execute("SELECT kind, p_from, p_to, COUNT(*), SUM(net) FROM rep_sales "
+                                "GROUP BY kind, p_from, p_to ORDER BY p_from, kind").fetchall()
+
+    def delete_rep_sales(self, kind, p_from, p_to):
+        self.con.execute("DELETE FROM rep_sales WHERE kind=? AND p_from=? AND p_to=?", (kind, p_from, p_to))
+        self.con.commit()
+
+    def _save_monthly(self, table, fields, by_period):
+        for period, rows in by_period.items():
+            self.con.execute(f"DELETE FROM {table} WHERE period=?", (period,))
+            self.con.executemany(
+                f"INSERT INTO {table}(period, {', '.join(fields)}) VALUES({','.join('?' * (len(fields) + 1))})",
+                [(period,) + tuple(r.get(f) for f in fields) for r in rows])
+        self.con.commit()
+
+    def _monthly(self, table, fields, periods):
+        q = ",".join("?" * len(periods))
+        cur = self.con.execute(f"SELECT period, {', '.join(fields)} FROM {table} WHERE period IN ({q}) ORDER BY id",
+                               tuple(periods))
+        return [dict(zip(["period"] + fields, r)) for r in cur]
+
+    def save_invoices(self, by_period):
+        """by_period: {month: [invoice dicts]}. Replaces each month in the file."""
+        self._save_monthly("invoices", INVOICE_FIELDS, by_period)
+
+    def invoices(self, periods):
+        return self._monthly("invoices", INVOICE_FIELDS, periods)
+
+    def save_receipts(self, by_period):
+        self._save_monthly("receipts", RECEIPT_FIELDS, by_period)
+
+    def receipts(self, periods):
+        return self._monthly("receipts", RECEIPT_FIELDS, periods)
+
+    def monthly_counts(self, table):
+        """{period: (rows, amount)} for invoices / receipts."""
+        col = "net" if table == "invoices" else "amount"
+        return {p: (n, a) for p, n, a in self.con.execute(
+            f"SELECT period, COUNT(*), SUM({col}) FROM {table} GROUP BY period")}
+
+    def delete_monthly(self, table, period):
+        self.con.execute(f"DELETE FROM {table} WHERE period=?", (period,))
+        self.con.commit()
 
     def delete_annual(self, period):
         for table in ("annual_tb", "annual_branch"):
