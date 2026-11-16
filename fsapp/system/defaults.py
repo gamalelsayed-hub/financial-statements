@@ -179,4 +179,15 @@ SETTINGS = {
     "alert_pct": "0.2",
     "alert_amount": "10000",
     "admin_label": "الإدارة والمستودع المركزي",
+    # sales reps evaluation: criteria weights (sum 1), caps, yearly iqama / insurance, customer accounts prefix
+    "rep_w_sales": "0.35",
+    "rep_w_profit": "0.25",
+    "rep_w_coll": "0.20",
+    "rep_w_roi": "0.10",
+    "rep_w_margin": "0.10",
+    "rep_cap": "1",
+    "rep_roi_cap": "1.5",
+    "rep_iqama": "10350",
+    "rep_insurance": "500",
+    "rep_cust_prefix": "114",
 }

@@ -26,6 +26,7 @@ from .aging_view import AgingPage
 from .dashboard_view import DashboardPage
 from .items_view import ItemsPage
 from .progress import Progress
+from .reps_view import RepsPage
 from . import zoom
 from .table_tools import freeze
 from .zoom import pt
@@ -1104,7 +1105,7 @@ class DataPage(QWidget):
             return
         p = self.table.item(r, 0).data(Qt.UserRole)
         if QMessageBox.question(self, "تأكيد", f"حذف كل بيانات شهر {calc.month_label(p)} (الميزان، حركة الفروع، "
-                                "الأعمار، ومبيعات ومشتريات الأصناف)؟") == QMessageBox.Yes:
+                                "الأعمار، ومبيعات ومشتريات الأصناف، وفواتير وسندات المناديب)؟") == QMessageBox.Yes:
             self.win.db.delete_period(p)
             self.win.data_changed()
 
@@ -1643,6 +1644,7 @@ class SystemWindow(QMainWindow):
         self.pages = [("📊 لوحة التحكم", self.dashboard), ("📈 التقارير", self.reports_page),
                       ("👥 العملاء والموردين", self.aging_page),
                       ("🗓 البيانات الشهرية", DataPage(self)), ("📦 الأصناف والعملاء", ItemsPage(self)),
+                      ("🧑‍💼 تقييم المناديب", RepsPage(self)),
                       ("🔗 ربط الحسابات", MappingPage(self)),
                       ("📋 البنود", ListsPage(self)), ("⚙ الإعدادات", SettingsPage(self))]
         for title, page in self.pages:
