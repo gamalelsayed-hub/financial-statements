@@ -150,7 +150,9 @@ class RepCard(QFrame):
                  ("صافي المساهمة", _num(r.contribution)), ("العائد لكل ريال", _num(r.roi, "x")),
                  ("التحصيل", _num(r.collected) if r.collected else "—"),
                  ("نسبة التحصيل", _num(r.coll_rate, "%")), ("المتأخر من الرصيد", _num(r.overdue_share, "%")),
-                 ("الفواتير / متوسطها", f"{r.inv_count:,} / {_num(r.avg_invoice)}" if r.inv_count else "—")]
+                 ("عدد العملاء", f"{r.customer_count:,}" if r.customer_count else "—"),
+                 ("عدد الفواتير", f"{r.inv_count:,}" if r.inv_count else "—"),
+                 ("متوسط الفاتورة", _num(r.avg_invoice))]
         top_item = max(r.items.items(), key=lambda kv: kv[1][1] - kv[1][2])[1][0] if r.items else ""
         if top_item:
             lines.append(("أكثر صنف ربحًا", top_item))

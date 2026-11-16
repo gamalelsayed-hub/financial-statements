@@ -124,6 +124,8 @@ def test_evaluation(db):
     # invoices linked by name (spaces and alef forms ignored); a shared customer goes to the rep of its branch
     assert a.inv_count == 2 and b.inv["من حساب"][0] == 1
     assert ev.inv_unlinked[0] == 0
+    # customers who bought (customers-by-rep file covers Jan–Feb)
+    assert a.customer_count == 2 and b.customer_count == 2
     # scores: five criteria, each at most its weight, ranked
     assert ev.use_coll
     for r in (a, b):

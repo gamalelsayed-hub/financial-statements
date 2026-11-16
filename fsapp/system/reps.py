@@ -99,6 +99,12 @@ class RepRow:
         return safe_div(self.gp, self.rep_cost)
 
     @property
+    def customer_count(self):
+        """Customers who bought in the period: from the customers-by-rep file, else the invoices' customers."""
+        n = sum(1 for v in self.customers.values() if v[1] > 0.5)
+        return n or len(self.inv_customers)
+
+    @property
     def inv_count(self):
         return sum(v[0] for v in self.inv.values())
 
@@ -454,8 +460,8 @@ def rpt_summary(ev):
         Row("المتأخر", [t["overdue"] if ev.has_closing else None])], title="الإجمالي")]
     cols = ["المندوب", "الترتيب", "الدرجة", "التقدير", "صافي المبيعات", "تحقيق التارجت", "مجمل الربح", "الهامش",
             "تكلفة المندوب", "العمولة", "صافي المساهمة", "العائد لكل ريال", "نسبة التحصيل", "المتأخر %",
-            "عدد الفواتير", "متوسط الفاتورة"]
-    fm = ["d", "x", "t", "n", "%", "n", "%", "n", "n", "n", "x", "%", "%", "d", "n"]
+            "عدد العملاء", "عدد الفواتير", "متوسط الفاتورة"]
+    fm = ["d", "x", "t", "n", "%", "n", "%", "n", "n", "n", "x", "%", "%", "d", "d", "n"]
     rows = []
     for r in ev.ordered():
         st = [None] * len(fm)
@@ -464,12 +470,15 @@ def rpt_summary(ev):
             st[9] = "bad"
         rows.append(Row(f"{r.code} {r.name}", [
             r.rank, r.score, r.grade, r.net, safe_div(r.net, r.target_m * ev.n) if r.target_m else None, r.gp, r.margin,
-            r.rep_cost, r.commission, r.contribution, r.roi, r.coll_rate, r.overdue_share, r.inv_count or None,
-            r.avg_invoice], styles=st))
+            r.rep_cost, r.commission, r.contribution, r.roi, r.coll_rate, r.overdue_share, r.customer_count or None,
+            r.inv_count or None, r.avg_invoice], styles=st))
     rows.append(Row("الإجمالي", [None, None, "", t["net"], t["ach"], t["gp"], t["margin"], t["cost"], t["commission"],
                                 t["contribution"], safe_div(t["gp"], t["cost"]), t["coll_rate"],
                                 safe_div(t["overdue"], t["closing"]) if ev.has_closing else None,
-                                sum(r.inv_count for r in ev.evaluated()) or None, None], "tot"))
+                                sum(r.customer_count for r in ev.evaluated()) or None,
+                                sum(r.inv_count for r in ev.evaluated()) or None,
+                                safe_div(sum(r.inv_value for r in ev.evaluated()),
+                                         sum(r.inv_count for r in ev.evaluated()))], "tot"))
     blocks.append(Table(cols, rows, fm, title="ترتيب المناديب"))
     w = "، ".join(f"{label} {wt * 100:.0f}%" for _, label, wt in ev.weights_used())
     blocks.append(Para(f"الأوزان: {w}. كل معيار يُقاس على تارجت المندوب أو متوسط الشركة بقيمته الفعلية، والدرجة كاملة "
@@ -488,7 +497,10 @@ def rpt_rep(ev, code):
     blocks = []
     rank = f"#{r.rank} من {sum(1 for x in ev.evaluated() if x.rank)}" if r.rank else "—"
     head = [Row("الدرجة", [r.score if r.score is not None else NOT_RATED], fmt="x"), Row("التقدير", [r.grade]),
-            Row("الترتيب", [rank]), Row("الجنسية", [r.nationality])]
+            Row("الترتيب", [rank]), Row("الجنسية", [r.nationality]),
+            Row("عدد العملاء", [f"{r.customer_count:,}" if r.customer_count else "—"]),
+            Row("عدد الفواتير", [f"{r.inv_count:,}" if r.inv_count else "—"]),
+            Row("متوسط الفاتورة", [f"{r.avg_invoice:,.0f}" if r.avg_invoice else "—"])]
     blocks.append(Table(["التقييم", ""], head, ["t"], title=f"{r.code} — {r.name}"))
     if r.parts:
         rows = []
