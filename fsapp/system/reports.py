@@ -410,7 +410,7 @@ def rpt_checks(ctx: Ctx, p: Params):
                         styles=[None, None, "good" if ok else "bad", None]))
     fails = sum(1 for c in checks if not c[3])
     head = Para("✓ كل الفحوصات سليمة" if not fails else
-                f"⚠ فحوصات تحتاج مراجعة: {fails} — افتح «تشخيص الخلل» لمعرفة الحسابات المسببة بالضبط والحل.",
+                f"⚠ فحوصات تحتاج مراجعة: {fails} — الحسابات المسببة بالضبط والحل في «تشخيص الخلل» تحت.",
                 "good" if not fails else "bad")
     return Report("checks", "المطابقات والفحوصات", range_label(p.months()),
                   [head, Table(["الفحص", "القيمة", "السماحية", "النتيجة", "ماذا أفعل لو فشل؟"], rows,
@@ -859,31 +859,67 @@ def rpt_suppliers(ctx: Ctx, p: Params):
     return Report("suppliers", "تحليل أرصدة الموردين", f"في نهاية {month_label(p.end)}", blocks)
 
 # ================================================================== registry
+# ---------------------------------------------------------------- merged reports (one report, several views)
+def rpt_review(ctx: Ctx, p: Params):
+    """Checks on top, then the diagnosis with the exact accounts and the fix."""
+    a, b = rpt_checks(ctx, p), rpt_diag(ctx, p)
+    blocks = a.blocks + [Para("تشخيص الخلل — الحسابات المسببة والحل", "good")] + b.blocks
+    return Report("checks", "المطابقات وتشخيص الخلل", a.subtitle, blocks)
+
+
+def rpt_cash_sources(ctx: Ctx, p: Params):
+    """Where the cash came from and went: for the period, month by month, or «where did the cash go?»."""
+    fn = {"monthly": rpt_m_su, "cash": rpt_m_cash}.get(p.view, rpt_su)
+    return fn(ctx, p)
+
+
+def rpt_m_branches(ctx: Ctx, p: Params):
+    return (rpt_m_br_profit if p.view == "profit" else rpt_m_br_sales)(ctx, p)
+
+
+def rpt_expenses(ctx: Ctx, p: Params):
+    return (rpt_m_exp if p.view == "monthly" else rpt_exp)(ctx, p)
+
+
+# views of the reports that have several: [(label, view)] — the first is the default
+VIEWS = {
+    "branches": [("الفترة", "period"), ("من بداية السنة", "ytd")],
+    "su": [("للفترة", "period"), ("شهريًا", "monthly"), ("الكاش راح فين؟ (شهريًا)", "cash")],
+    "m_br": [("صافي المبيعات", "sales"), ("صافي الربح بعد التوزيع", "profit")],
+    "exp": [("مقارنة بين فترتين", "compare"), ("شهريًا حسب المجموعة", "monthly")],
+}
+# old keys (before merging) → (new key, view): saved settings and links still open the right report
+OLD_KEYS = {"diag": ("checks", None), "m_su": ("su", "monthly"), "m_cash": ("su", "cash"),
+            "m_br_sales": ("m_br", "sales"), "m_br_profit": ("m_br", "profit"), "m_exp": ("exp", "monthly")}
+
+
+def all_variants():
+    """(key, view) of every report and each of its views — «export all» writes them all."""
+    for k, _, _ in ALL_REPORTS:
+        for _, v in VIEWS.get(k, [(None, None)]):
+            yield k, v
+
+
 PERIOD_REPORTS = [
     ("summary", "الملخص التنفيذي", rpt_summary),
-    ("checks", "المطابقات والفحوصات", rpt_checks),
-    ("diag", "تشخيص الخلل", rpt_diag),
+    ("checks", "المطابقات وتشخيص الخلل", rpt_review),
     ("bs", "المركز المالي", rpt_bs),
     ("is", "قائمة الدخل", rpt_is),
     ("cf", "التدفقات النقدية", rpt_cf),
-    ("su", "مصادر النقد واستخداماته", rpt_su),
+    ("su", "مصادر النقد واستخداماته", rpt_cash_sources),
     ("branches", "دخل الفروع وتوزيع مصروفات الإدارة", rpt_branches),
     ("branch_exp", "تحليل مصروفات فرع", rpt_branch_exp),
-    ("exp", "تحليل المصروفات بين فترتين", rpt_exp),
+    ("exp", "تحليل المصروفات", rpt_expenses),
     ("ratios", "النسب المالية", rpt_ratios),
     ("customers", "تحليل أرصدة العملاء", rpt_customers),
     ("suppliers", "تحليل أرصدة الموردين", rpt_suppliers),
 ]
 MONTHLY_REPORTS = [
     ("m_is", "قائمة الدخل الشهرية", rpt_m_is),
-    ("m_exp", "المصروفات الشهرية حسب المجموعة", rpt_m_exp),
     ("m_bs", "المركز المالي في نهاية كل شهر", rpt_m_bs),
     ("m_kpi", "المؤشرات الشهرية", rpt_m_kpi),
     ("m_cf", "التدفقات النقدية الشهرية", rpt_m_cf),
-    ("m_cash", "الكاش راح فين؟", rpt_m_cash),
-    ("m_su", "مصادر النقد واستخداماته شهريًا", rpt_m_su),
-    ("m_br_sales", "الفروع شهريًا — صافي المبيعات", rpt_m_br_sales),
-    ("m_br_profit", "الفروع شهريًا — صافي الربح بعد التوزيع", rpt_m_br_profit),
+    ("m_br", "الفروع شهريًا", rpt_m_branches),
     ("m_branch", "تحليل فرع شهريًا", rpt_m_branch),
 ]
 from .annual import ANNUAL_REPORTS  # noqa: E402
@@ -894,11 +930,10 @@ REPORT_GROUPS = [("— تقارير الفترة —", PERIOD_REPORTS), ("— ا
                  ("— تقارير الأصناف —", ITEM_REPORTS), ("— المقارنات السنوية —", ANNUAL_REPORTS)]
 # the reports screen shows them by subject (a tree with collapsible groups); exports keep the order above
 SUBJECT_GROUPS = [
-    ("📌 نظرة عامة", ["summary", "ratios", "m_kpi"]),
-    ("✅ المراجعة والفحص", ["checks", "diag"]),
+    ("📌 نظرة عامة", ["summary", "checks", "ratios", "m_kpi"]),
     ("📑 القوائم المالية", ["bs", "is", "cf", "su"]),
-    ("🗓 القوائم شهرًا بشهر", ["m_is", "m_bs", "m_cf", "m_cash", "m_su"]),
-    ("🏬 الفروع والمصروفات", ["branches", "m_br_sales", "m_br_profit", "m_branch", "branch_exp", "exp", "m_exp"]),
+    ("🗓 القوائم شهرًا بشهر", ["m_is", "m_bs", "m_cf"]),
+    ("🏬 الفروع والمصروفات", ["branches", "m_br", "m_branch", "branch_exp", "exp"]),
     ("👥 العملاء والموردين", ["customers", "suppliers"]),
 ]
 
@@ -921,10 +956,16 @@ def subject_groups():
 
 NEEDS_SUPP_VIEW = {"suppliers", "it_purch"}
 NEEDS_BRANCH = {"branch_exp", "m_branch"}
-NEEDS_VIEW = {"branches"}
+NEEDS_VIEW = set(VIEWS)
 
 
 def build(key, ctx, params):
+    if key in OLD_KEYS:
+        key, view = OLD_KEYS[key]
+        if view:
+            params.view = view
+    if key in VIEWS and params.view not in [v for _, v in VIEWS[key]]:
+        params.view = VIEWS[key][0][1]
     for k, _, fn in ALL_REPORTS:
         if k == key:
             return fn(ctx, params)

@@ -935,7 +935,7 @@ class DataPage(QWidget):
             who = f" [{h_.code} {h_.name}]" if h_.code else ""
             msg.append(f"{prefix}{who} {h_.issue} {h_.fix}")
         if len(hints) > 15:
-            msg.append(f"… و{len(hints) - 15} ملاحظة أخرى — افتح تقرير «تشخيص الخلل».")
+            msg.append(f"… و{len(hints) - 15} ملاحظة أخرى — افتح تقرير «المطابقات وتشخيص الخلل».")
         if new:
             msg.append(f"• {len(new)} حساب جديد أضيف لشاشة الربط ويحتاج ربط.")
         self.log.appendPlainText("\n".join(msg))
@@ -1479,9 +1479,8 @@ class ReportsPage(QWidget):
         self.branch.currentIndexChanged.connect(lambda *_: self.show_report())
         self.view_lbl = QLabel("العرض:")
         self.view = QComboBox()
-        self.view.addItem("الفترة", "period")
-        self.view.addItem("من بداية السنة", "ytd")
-        self.view.currentIndexChanged.connect(lambda *_: self.show_report())
+        self.view_key, self.view_choice = None, {}   # the report the views are filled for, and each one's choice
+        self.view.currentIndexChanged.connect(self._view_changed)
         self.supp_lbl = QLabel("عرض الموردين:")
         self.supp = QComboBox()
         self.supp.addItem("تفصيلي حسب النوع (محلي / خارجي / خدمات)", "type")
@@ -1515,6 +1514,8 @@ class ReportsPage(QWidget):
         self.branch.blockSignals(False)
         if not self.key():
             self.open_report(QSettings().value("last_report", "summary") or "summary")
+        if not self.key():
+            self.open_report("summary")
         self.show_report()
 
     def _items(self):
@@ -1549,8 +1550,33 @@ class ReportsPage(QWidget):
             self.win.remember_place()
         self.show_report()
 
-    def open_report(self, key):
-        """Select a report by its key and open its group (dashboard chip, back / forward, last report)."""
+    def _fill_views(self, key):
+        """The «العرض» list holds the views of the shown report (period / monthly ...), remembering each choice."""
+        if key == self.view_key:
+            return
+        self.view_key = key
+        self.view.blockSignals(True)
+        self.view.clear()
+        for label, v in R.VIEWS.get(key, []):
+            self.view.addItem(label, v)
+        i = self.view.findData(self.view_choice.get(key))
+        self.view.setCurrentIndex(max(0, i))
+        self.view.blockSignals(False)
+
+    def _view_changed(self, *_):
+        if self.view_key:
+            self.view_choice[self.view_key] = self.view.currentData()
+        self.show_report()
+
+    def open_report(self, key, view=None):
+        """Select a report by its key and open its group (dashboard chip, back / forward, last report).
+        An old key of a report that was merged opens the merged report on the same view."""
+        if key in R.OLD_KEYS:
+            key, view = R.OLD_KEYS[key]
+        if view:
+            self.view_choice[key] = view
+            if self.view_key == key:
+                self.view.setCurrentIndex(max(0, self.view.findData(view)))
         for g, c in self._items():
             if c.data(0, Qt.UserRole) == key:
                 g.setExpanded(True)
@@ -1567,6 +1593,7 @@ class ReportsPage(QWidget):
             return
         self.branch.setVisible(key in R.NEEDS_BRANCH)
         self.branch_lbl.setVisible(key in R.NEEDS_BRANCH)
+        self._fill_views(key)
         self.view.setVisible(key in R.NEEDS_VIEW)
         self.view_lbl.setVisible(key in R.NEEDS_VIEW)
         self.supp.setVisible(key in R.NEEDS_SUPP_VIEW)
@@ -1909,9 +1936,10 @@ class SystemWindow(QMainWindow):
         if everything:
             reps = []
             with Progress(self, "تجهيز كل التقارير") as bar:
-                for i, (key, title, _) in enumerate(R.ALL_REPORTS):
-                    bar(i, len(R.ALL_REPORTS), title)
-                    p = R.Params(params.end, params.n, params.comp, rp.branch.currentText(), rp.view.currentData(),
+                variants = list(R.all_variants())
+                for i, (key, view) in enumerate(variants):
+                    bar(i, len(variants), key)
+                    p = R.Params(params.end, params.n, params.comp, rp.branch.currentText(), view or "period",
                                  rp.supp.currentData() or "type")
                     try:
                         reps.append(R.build(key, self.ctx, p))

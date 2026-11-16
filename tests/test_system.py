@@ -406,7 +406,7 @@ def test_dashboard_screen_narrow_and_wide(company):
         app.processEvents()
         assert page.cols == page._columns()
     page.open_diagnosis()
-    assert win.reports_page.opened == "diag" and win.nav.row == 1
+    assert win.reports_page.opened == "checks" and win.nav.row == 1
 
 
 def test_reports_tree_search_and_history(company):
@@ -428,11 +428,26 @@ def test_reports_tree_search_and_history(company):
     page = ReportsPage(win)
     page.load()
     assert page.key()
-    page.open_report("diag")
-    assert page.key() == "diag" and "diag" in win.places
+    page.open_report("diag")                     # an old key opens the merged report
+    assert page.key() == "checks" and "checks" in win.places
+    page.open_report("m_cash")
+    assert page.key() == "su" and page.view.currentData() == "cash"
+    assert page.current_report.key == "m_cash"
     page.filter_reports("الفروع")
     shown = [c.text(0) for g, c in page._items() if not c.isHidden()]
     assert shown and all("الفروع" in t for t in shown)
     page.filter_reports("")
     assert all(not c.isHidden() for _, c in page._items())
     app.processEvents()
+
+
+def test_merged_reports_and_old_keys(company):
+    ctx = Ctx(company)
+    for key, view in R.all_variants():
+        R.build(key, ctx, R.Params(end="2026-03", n=3, view=view or "period", branch="الفرع أ"))
+    review = R.build("checks", ctx, R.Params(end="2026-03"))
+    assert any("تشخيص الخلل" in getattr(b, "text", "") for b in review.blocks)
+    assert R.build("m_cash", ctx, R.Params(end="2026-03", n=3)).key == "m_cash"
+    assert R.build("su", ctx, R.Params(end="2026-03", n=3, view="monthly")).key == "m_su"
+    assert R.build("exp", ctx, R.Params(end="2026-03", n=3, view="nonsense")).key == "exp"
+    assert len(R.ALL_REPORTS) < len(list(R.all_variants()))

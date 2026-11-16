@@ -166,7 +166,7 @@ class DashboardPage(QScrollArea):
         if d["fails"] is not None:
             ok = d["fails"] == 0
             chip = QPushButton("✓ المطابقات سليمة: الميزانية والتدفقات متوازنة" if ok else
-                               f"⚠ {d['fails']} فحص يحتاج مراجعة — اضغط لفتح «تشخيص الخلل»")
+                               f"⚠ {d['fails']} فحص يحتاج مراجعة — اضغط لفتح «المطابقات وتشخيص الخلل»")
             chip.setCursor(Qt.PointingHandCursor)
             chip.setStyleSheet(f"QPushButton {{ color:white; background:{STATUS['good'] if ok else STATUS['bad']}; "
                                "border:none; border-radius:12px; padding:6px 12px; font-weight:700; }")
@@ -183,7 +183,7 @@ class DashboardPage(QScrollArea):
 
     def open_diagnosis(self):
         """Go to the reports screen on «تشخيص الخلل»."""
-        self.win.reports_page.open_report("diag")
+        self.win.reports_page.open_report("checks")
         self.win.nav.setCurrentRow(1)
 
     @staticmethod
