@@ -225,12 +225,28 @@ class Evaluation:
         if not self.has_sales:
             self.notes.append("⚠ لا يوجد ملف مبيعات بالمندوب (الأصناف أو العملاء) للفترة.")
 
+    def _invoice_names(self):
+        """Customer name → rep codes, also from «بيانات العملاء» and the latest customers' aging up to the period
+        end, so a customer missing from the customers-by-rep file can be linked by adding him there."""
+        names = defaultdict(set, {k: set(v) for k, v in self.name_reps.items()})
+        extra = [(v.get("name"), v.get("rep")) for v in self.db.customer_master().values()]
+        ages = [p for p in self.db.aging_periods("customers") if p <= self.last]
+        if ages:
+            extra += [(r.get("name"), r.get("rep")) for r in self.db.aging("customers", ages[-1])]
+        for name, rep in extra:
+            n, code = D.norm_name(name), self.rep_key(rep)
+            if n and code and n not in self.name_reps:
+                names[n].add(code)
+        return names
+
     def _load_invoices(self):
         inv = self.db.invoices(self.months)
         self.inv_total = len(inv)
         self.inv_unlinked = [0, 0.0]
+        self.inv_unlinked_rows = []
         if not inv:
             return
+        self.name_reps = self._invoice_names()
         # branch (first 7 digits of the invoice number) → reps seen with it, from invoices linked by name alone
         by_prefix = defaultdict(lambda: defaultdict(int))
         cands = []
@@ -253,6 +269,7 @@ class Evaluation:
             if not code:
                 self.inv_unlinked[0] += 1
                 self.inv_unlinked[1] += x["net"] or 0.0
+                self.inv_unlinked_rows.append(x)
                 continue
             r = self.rep(code)
             t = r.inv[x["itype"] or "غير محدد"]
@@ -602,7 +619,7 @@ def rpt_collections(ev):
 
 def rpt_invoices(ev):
     types = sorted({t for r in ev.reps.values() for t in r.inv})
-    if not types:
+    if not ev.inv_total:
         return Report("rep_invoices", "فواتير المناديب", _sub(ev),
                       [Para("لا توجد فواتير للفترة — ارفع تقرير الفواتير من صفحة «تقييم المناديب» ← «البيانات».", "warn")])
     cols = ["المندوب"] + [f"{t} (عدد)" for t in types] + ["عدد الفواتير", "القيمة", "متوسط الفاتورة", "عدد العملاء"]
@@ -615,7 +632,28 @@ def rpt_invoices(ev):
                         [r.inv_count, r.inv_value, r.avg_invoice, len(r.inv_customers)]))
     blocks = [Table(cols, rows, fm, title="عدد الفواتير ونوعها ومتوسط الفاتورة")]
     if ev.inv_unlinked[0]:
-        blocks.append(Para(f"فواتير بدون مندوب: {ev.inv_unlinked[0]} بقيمة {ev.inv_unlinked[1]:,.0f}.", "warn"))
+        blocks.append(Para(f"فواتير بدون مندوب: {ev.inv_unlinked[0]} بقيمة {ev.inv_unlinked[1]:,.0f} — تفصيلها في الجدول "
+                           "التالي (وفي ملف Excel للتقارير).", "warn"))
+        g = {}
+        for x in ev.inv_unlinked_rows:
+            e = g.setdefault(D.norm_name(x["cust_name"]) or "(بدون اسم)",
+                             {"name": x["cust_name"] or "(بدون اسم)", "n": 0, "v": 0.0, "types": defaultdict(int),
+                              "acct": set(), "branch": set(), "first": x["inv_no"], "date": x.get("date") or ""})
+            e["n"] += 1
+            e["v"] += x["net"] or 0.0
+            e["types"][x["itype"] or "غير محدد"] += 1
+            e["acct"].add(x["acct"] or "")
+            e["branch"].add((x["inv_no"] or "")[:7])
+        rows = [Row(e["name"], [e["n"], e["v"], "، ".join(f"{t} {n}" for t, n in e["types"].items()),
+                                "، ".join(sorted(a for a in e["acct"] if a)), "، ".join(sorted(b for b in e["branch"] if b)),
+                                e["first"]])
+                for e in sorted(g.values(), key=lambda e: -abs(e["v"]))]
+        rows.append(Row("الإجمالي", [ev.inv_unlinked[0], ev.inv_unlinked[1], "", "", "", ""], "tot"))
+        blocks.append(Table(["اسم العميل في الفاتورة", "عدد الفواتير", "القيمة", "النوع", "رقم الحساب",
+                             "الفرع (أول 7 أرقام)", "مثال رقم فاتورة"], rows, ["d", "n", "t", "t", "t", "t"],
+                            title=f"الفواتير بدون مندوب ({len(g)} اسم)"))
+        blocks.append(Para("للربط: أضف العميل بنفس الاسم ومعه المندوب في «📦 الأصناف والعملاء» ← «بيانات العملاء» "
+                           "(أو يكون في أعمار العملاء)، والتقرير يتحدث تلقائيًا. أغلب الأسماء النقدية عملاء نقديون عابرون."))
     blocks.append(Para("الفاتورة تُربط بالمندوب باسم العميل من ملف العملاء بالمندوب؛ لو العميل عند أكثر من مندوب يُختار "
                        "المندوب الأكثر فواتير في نفس الفرع (أول 7 أرقام من رقم الفاتورة)."))
     return Report("rep_invoices", "فواتير المناديب", _sub(ev), blocks)

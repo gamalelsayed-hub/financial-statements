@@ -194,3 +194,15 @@ def test_screen(db):
             app.processEvents()
             page.grab().save(os.path.join(out, f"{name}.png"))
     app.processEvents()
+
+
+def test_unlinked_invoices_listed_and_fixed_by_customer_master(db):
+    db.save_invoices({"2026-01": [{"inv_no": "2611999001", "itype": "نقد", "cust_name": "عميل جديد", "net": 700.0},
+                                  {"inv_no": "2611999002", "itype": "نقد", "cust_name": "عميل جديد", "net": 300.0}]})
+    ev = RP.evaluate(db, ["2026-01"])
+    assert ev.inv_unlinked == [2, 1000.0] and len(ev.inv_unlinked_rows) == 2
+    rep = RP.rpt_invoices(ev)
+    assert any(getattr(b, "title", "") and "بدون مندوب" in b.title for b in rep.blocks)
+    db.save_customer_master([{"code": "C9", "name": "عميل  جديد", "rep": "مندوب ثاني"}])
+    ev = RP.evaluate(db, ["2026-01"])
+    assert ev.inv_unlinked[0] == 0 and ev.reps["1002"].inv["نقد"][0] == 2
