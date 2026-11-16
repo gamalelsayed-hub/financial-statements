@@ -19,6 +19,7 @@ from .zoom import pt
 NAVY = "#12355b"
 GRADE_COLORS = {"ممتاز": ("#dcfae6", "#067647"), "جيد جداً": ("#e8f5e1", "#3b6d11"), "جيد": ("#fef7c3", "#854d0e"),
                 "مقبول": ("#fdead7", "#b54708"), "ضعيف": ("#fee4e2", "#b42318"), RP.NOT_RATED: ("#eaecf0", "#475467")}
+SHORT = {"roi": "العائد"}
 KIND_LABEL = {"items": "الأصناف بالمندوب", "customers": "العملاء بالمندوب"}
 
 
@@ -127,7 +128,7 @@ class RepCard(QFrame):
             if not r.parts:
                 break
             got, top = r.parts.get(k, 0.0), wt * 100
-            lb = QLabel(f"درجة {label}")
+            lb = QLabel(f"درجة {SHORT.get(k, label)}")
             lb.setStyleSheet(f"color:{NAVY}; font-weight:600; font-size:{pt(9)};")
             val = QLabel(f"{got:,.1f} / {top:,.0f}")
             val.setStyleSheet(f"color:{NAVY}; font-weight:700; font-size:{pt(9)};")
@@ -292,6 +293,7 @@ class DataTab(QWidget):
         self.files.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.files.verticalHeader().setVisible(False)
         self.files.setMaximumHeight(170)
+        self.files.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         fv.addWidget(self.files)
         fv.addWidget(_btn("🗑 حذف الملف المحدد", self.delete_file), 0, Qt.AlignLeft)
         lay.addWidget(files)
@@ -301,6 +303,7 @@ class DataTab(QWidget):
         self.table.setHorizontalHeaderLabels([h for _, h in self.REP_COLS])
         self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
+        self.table.setMinimumHeight(230)
         rv.addWidget(self.table)
         h = QHBoxLayout()
         h.addWidget(_btn("＋ مندوب", self.add_rep))
