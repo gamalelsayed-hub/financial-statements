@@ -92,6 +92,35 @@ def is_text(v):
     return v is not None and str(v).strip() != "" and to_number(v) is None
 
 
+def amount_columns_from_header(rows, first):
+    """Amount columns from the header rows above the data: the debit / credit pairs (مدين / دائن), and the row
+    above them names each pair (opening / movement / closing). Returns {} when the header doesn't say."""
+    top = rows[max(0, first - 6):first]
+    for i in range(len(top) - 1, -1, -1):
+        cols = [c for c, v in enumerate(top[i]) if v is not None and ("مدين" in str(v) or "دائن" in str(v))]
+        if len(cols) < 4 or len(cols) % 2:
+            continue
+        pairs = [(cols[k], cols[k + 1]) for k in range(0, len(cols), 2)]
+        if not all("مدين" in str(top[i][a]) and "دائن" in str(top[i][b]) for a, b in pairs):
+            continue
+        if len(pairs) >= 3:
+            kinds = ["o", "m", "c"]
+            pairs = pairs[:3]
+        else:
+            # two pairs: the label above (or the same cell) tells which; default opening + closing
+            def label(c):
+                text = " ".join(str(r[c] or "") for r in top[:i + 1])
+                return "m" if "حرك" in text else "o" if "افتتاح" in text else "c"
+            kinds = [label(a) for a, _ in pairs]
+            if len(set(kinds)) < 2:
+                kinds = ["o", "c"]
+        out = {}
+        for k, (a, b) in zip(kinds, pairs):
+            out[k + "d"], out[k + "c"] = a, b
+        return out
+    return {}
+
+
 def guess_mapping(rows):
     """Guess the first data row and the column of each role.
 
@@ -113,6 +142,9 @@ def guess_mapping(rows):
     for c in range(width):
         vals = [r[c] for r in sample if r[c] is not None and str(r[c]).strip() != ""]
         if not vals:
+            # a credit column of the first rows (assets) is often empty: look further down the file
+            vals = [r[c] for r in rows[first:first + 3000] if r[c] is not None and str(r[c]).strip() != ""]
+        if not vals:
             continue
         n = sum(1 for v in vals if to_number(v) is not None)
         if n >= len(vals) * 0.6:
@@ -130,6 +162,10 @@ def guess_mapping(rows):
     amount_cols = [c for c in num_cols if c != mapping.get("code")]
     if "name" in mapping:
         amount_cols = [c for c in amount_cols if c > mapping["name"]] or amount_cols
+    headed = amount_columns_from_header(rows, first)
+    if headed:
+        mapping.update(headed)
+        return first, mapping
     if len(amount_cols) >= 6:
         for role, c in zip(AMOUNT_ROLES, amount_cols[:6]):
             mapping[role] = c

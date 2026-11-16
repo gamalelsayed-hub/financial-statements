@@ -40,3 +40,17 @@ def test_validate_balanced():
     leaves = [a for a in accounts if a.category != "exclude"]
     _, problems = importer.validate(leaves)
     assert problems == []
+
+
+def test_guess_mapping_two_row_header_with_empty_credit_columns():
+    """Header: pair names on one row, مدين / دائن on the next; the first accounts (assets) have no credit amounts."""
+    rows = [[None, "رقم الحساب", "العملة", "الرصيد الإفتتاحي", "الرصيد الإفتتاحي", "رصيد الحركة", "رصيد الحركة", "الأرصدة", "الأرصدة"],
+            ["الرقم", "الاسم", " ", "مدين", "دائن", "مدين", "دائن", "مدين", "دائن"],
+            [None] * 9]
+    rows += [[1100 + i, f"أصل {i}", "SAR", 1000.0, None, 100.0 if i % 2 else None, None if i % 2 else 50.0,
+              1100.0 if i % 2 else 950.0, None] for i in range(45)]
+    rows += [[2101, "دائن", "SAR", None, 45000.0, None, 1150.0, None, 46150.0],
+             [2102, "حركة", "SAR", None, None, 1100.0, None, 1100.0, None]]
+    first, m = importer.guess_mapping(rows)
+    assert first == 3
+    assert (m["code"], m["name"], m["od"], m["oc"], m["md"], m["mc"], m["cd"], m["cc"]) == (0, 1, 3, 4, 5, 6, 7, 8)
