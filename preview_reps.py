@@ -1,6 +1,5 @@
 """Temporary: screenshots of the reps screen with synthetic data (removed before merging)."""
 import os, random, sys
-os.environ["QT_QPA_PLATFORM"] = "offscreen"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from PySide6.QtWidgets import QApplication
 from fsapp.system.db import CompanyDB
@@ -41,6 +40,10 @@ db.save_invoices({"2026-10": [{"inv_no": f"26113{i % 3}0{j}", "itype": random.ch
                               for i in range(8) for j in range(60)]})
 db.save_commissions("2026-10", {r["code"]: random.uniform(500, 6000) for r in reps})
 app = QApplication([])
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
+app.setLayoutDirection(Qt.RightToLeft)
+app.setFont(QFont('Segoe UI', 10))
 
 class Win:
     pass
