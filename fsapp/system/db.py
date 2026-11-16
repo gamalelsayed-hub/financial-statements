@@ -108,7 +108,17 @@ class CompanyDB:
         self.con.executescript(SCHEMA)
         if not self.con.execute("SELECT 1 FROM settings LIMIT 1").fetchone():
             self._seed()
+        self._drop_total_rows()
         self.con.commit()
+
+    def _drop_total_rows(self):
+        """Footer rows of a system report saved as accounts by older versions (code with no digits, like
+        «عدد السجلات» or «الإجمالي») are removed from the trial balances, branch movements and the accounts."""
+        words = ("عدد السجلات", "عدد الحسابات", "الإجمالي", "الاجمالي", "إجمالي", "اجمالي", "المجموع")
+        like = " OR ".join("code LIKE ?" for _ in words)
+        args = tuple(f"%{w}%" for w in words)
+        for table in ("tb", "annual_tb", "branch_mov", "annual_branch", "accounts"):
+            self.con.execute(f"DELETE FROM {table} WHERE code NOT GLOB '*[0-9]*' AND ({like})", args)
 
     def close(self):
         self.con.close()

@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 ROLES = ["code", "name", "od", "oc", "md", "mc", "cd", "cc"]
 AMOUNT_ROLES = ["od", "oc", "md", "mc", "cd", "cc"]
 
-TOTAL_WORDS = ("الاجمالي", "الإجمالي", "اجمالي", "إجمالي", "المجموع", "مجموع", "total", "grand total")
+TOTAL_WORDS = ("الاجمالي", "الإجمالي", "اجمالي", "إجمالي", "المجموع", "مجموع", "total", "grand total", "عدد السجلات",
+               "عدد الحسابات")
 
 
 @dataclass
@@ -193,9 +194,10 @@ def build_accounts(rows, first_row, mapping):
             vals[role] = (to_number(r[mapping[role]]) or 0.0) if have[role] else 0.0
         if not name and not code:
             continue
-        low = name.lower().replace("أ", "ا").replace("إ", "ا")
-        if not code and any(w.replace("أ", "ا").replace("إ", "ا") in low for w in TOTAL_WORDS):
-            continue
+        low = f"{code} {name}".lower().replace("أ", "ا").replace("إ", "ا")
+        no_digit = not any(ch.isdigit() for ch in code)
+        if (not code or no_digit) and any(w.replace("أ", "ا").replace("إ", "ا") in low for w in TOTAL_WORDS):
+            continue   # a totals / footer row (الإجمالي، عدد السجلات ...) — even when its text sits in the code column
         if all(abs(v) < 1e-9 for v in vals.values()):
             continue
         a = Account(code=code or f"#{idx}", name=name, **vals)

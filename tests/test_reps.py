@@ -206,3 +206,25 @@ def test_unlinked_invoices_listed_and_fixed_by_customer_master(db):
     db.save_customer_master([{"code": "C9", "name": "عميل  جديد", "rep": "مندوب ثاني"}])
     ev = RP.evaluate(db, ["2026-01"])
     assert ev.inv_unlinked[0] == 0 and ev.reps["1002"].inv["نقد"][0] == 2
+
+
+def test_rep_names_and_partial_receipts(db):
+    ev = RP.evaluate(db, ["2026-01", "2026-02"])
+    assert ev.rep_key("مندوب الأول") == ""            # two reps start with «مندوب»: no guess
+    db.save_reps([{"code": "2001", "name": "قاسم علي", "nationality": "", "salary": 0, "target": 0, "other": 0,
+                   "active": 1, "note": ""}], replace=False)
+    ev = RP.evaluate(db, ["2026-01", "2026-02"])
+    assert ev.rep_key("قاسم الراجحي") == "2001"
+    db.delete_monthly("receipts", "2026-01")
+    ev = RP.evaluate(db, ["2026-01", "2026-02"])
+    assert ev.receipts_partial and not ev.use_coll
+
+
+def test_no_sales_file_means_not_rated(db):
+    ev = RP.evaluate(db, ["2026-03"])
+    assert all(r.score is None for r in ev.reps.values())
+
+
+def test_exact_duplicates():
+    by = {"2026-10": [{"vno": "1", "amount": 5.0}, {"vno": "1", "amount": 5.0}, {"vno": "2", "amount": 5.0}]}
+    assert D.exact_duplicates(by) == [({"amount": "5.0", "vno": "1"}, 2)]

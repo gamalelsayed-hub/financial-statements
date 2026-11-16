@@ -393,16 +393,10 @@ def diagnose(ctx, months):
     from .calc import month_add, month_label
     for per in months:
         prev = month_add(per, -1)
-        if prev not in ctx.tbs or per not in ctx.tbs:
-            continue
-        a_, b_ = ctx.tbs[prev], ctx.tbs[per]
-        for code in set(a_) | set(b_):
-            ca = (a_[code][5] - a_[code][6]) if code in a_ else 0.0
-            ob = (b_[code][1] - b_[code][2]) if code in b_ else 0.0
-            if abs(ca - ob) > 1:
-                findings.append(Finding("warn", "استمرارية الأرصدة", code, acc_name(code), ob - ca,
-                                        f"رصيد أول {month_label(per)} ≠ رصيد آخر {month_label(prev)}.",
-                                        f"قيد سُجل على {month_label(prev)} بعد رفع ميزانه — أعد رفع ميزان {month_label(prev)}."))
+        for code, ca, ob in ctx.continuity_breaks(per):
+            findings.append(Finding("warn", "استمرارية الأرصدة", code, acc_name(code), ob - ca,
+                                    f"رصيد أول {month_label(per)} ≠ رصيد آخر {month_label(prev)}.",
+                                    f"قيد سُجل على {month_label(prev)} بعد رفع ميزانه — أعد رفع ميزان {month_label(prev)}."))
 
     order = {"error": 0, "warn": 1, "info": 2}
     areas = ["توازن الميزان", "سطر الميزان", "حسابات رئيسية", "توازن المركز المالي", "التدفقات النقدية",

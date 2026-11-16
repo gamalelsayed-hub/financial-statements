@@ -365,16 +365,7 @@ def run_checks(ctx: Ctx, p: Params):
     add("حسابات دخل بلا «فئة دخل الفروع»", comp_pl["unmapped"], 1, "في الربط أعطِ الحساب فئة دخل الفروع")
     add("مصروفات تشغيلية بلا مجموعة", comp_pl["no_group"], 1, "في الربط أعطِ الحساب مجموعة مصروف")
     # continuity: opening of each month = closing of the previous month
-    breaks = 0
-    for i, per in enumerate(ctx.periods):
-        prev = month_add(per, -1)
-        if prev in ctx.tbs:
-            a, b = ctx.tbs[prev], ctx.tbs[per]
-            for code in set(a) | set(b):
-                ca = (a[code][5] - a[code][6]) if code in a else 0.0
-                ob = (b[code][1] - b[code][2]) if code in b else 0.0
-                if abs(ca - ob) > 1:
-                    breaks += 1
+    breaks = sum(len(ctx.continuity_breaks(per)) for per in ctx.periods)
     add("أرصدة أول الشهر = آخر الشهر السابق (كل الأشهر)", breaks, 0, "ميزان شهر ناقص أو قيود بعد إقفال الشهر السابق", True)
     ytd = ctx.ytd_months(end)
     miss = ctx.missing(ytd)
@@ -389,6 +380,8 @@ def run_checks(ctx: Ctx, p: Params):
         for b, vals in ctx.bmov.get(x, {}).items():
             for code in vals:
                 a = ctx.accounts.get(code)
+                if ctx.is_bs(code):
+                    continue   # a branch file that is a full trial balance: its balance-sheet accounts are ignored
                 if not a or a.branch_cat not in ctx.cat_kind:
                     bunm.add(code)
     add("حسابات في حركة الفروع بلا فئة", len(bunm), 0, "في الربط أعطِ الحساب فئة دخل الفروع", True)
@@ -899,6 +892,33 @@ from .item_reports import ITEM_REPORTS  # noqa: E402
 ALL_REPORTS = PERIOD_REPORTS + MONTHLY_REPORTS + ITEM_REPORTS + ANNUAL_REPORTS
 REPORT_GROUPS = [("— تقارير الفترة —", PERIOD_REPORTS), ("— التحليل الشهري —", MONTHLY_REPORTS),
                  ("— تقارير الأصناف —", ITEM_REPORTS), ("— المقارنات السنوية —", ANNUAL_REPORTS)]
+# the reports screen shows them by subject (a tree with collapsible groups); exports keep the order above
+SUBJECT_GROUPS = [
+    ("📌 نظرة عامة", ["summary", "ratios", "m_kpi"]),
+    ("✅ المراجعة والفحص", ["checks", "diag"]),
+    ("📑 القوائم المالية", ["bs", "is", "cf", "su"]),
+    ("🗓 القوائم شهرًا بشهر", ["m_is", "m_bs", "m_cf", "m_cash", "m_su"]),
+    ("🏬 الفروع والمصروفات", ["branches", "m_br_sales", "m_br_profit", "m_branch", "branch_exp", "exp", "m_exp"]),
+    ("👥 العملاء والموردين", ["customers", "suppliers"]),
+]
+
+
+def subject_groups():
+    """[(group title, [(key, name)])]: the subject groups, then items and annual reports, then anything left."""
+    names = {k: n for k, n, _ in ALL_REPORTS}
+    out, used = [], set()
+    for title, keys in SUBJECT_GROUPS:
+        out.append((title, [(k, names[k]) for k in keys if k in names]))
+        used |= set(keys)
+    for title, group in (("📦 الأصناف", ITEM_REPORTS), ("📆 المقارنات السنوية", ANNUAL_REPORTS)):
+        out.append((title, [(k, n) for k, n, _ in group if k not in used]))
+        used |= {k for k, _, _ in group}
+    rest = [(k, n) for k, n, _ in ALL_REPORTS if k not in used]
+    if rest:
+        out.append(("أخرى", rest))
+    return [(t, g) for t, g in out if g]
+
+
 NEEDS_SUPP_VIEW = {"suppliers", "it_purch"}
 NEEDS_BRANCH = {"branch_exp", "m_branch"}
 NEEDS_VIEW = {"branches"}

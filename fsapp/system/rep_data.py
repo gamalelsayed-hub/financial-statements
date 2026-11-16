@@ -168,6 +168,13 @@ def dominant(by):
     return p, len(by[p]) / total
 
 
+def exact_duplicates(by):
+    """Rows repeated exactly (every field the same) inside an uploaded file: [(row, times)]."""
+    from collections import Counter
+    c = Counter(tuple(sorted((k, str(v)) for k, v in r.items())) for v in by.values() for r in v)
+    return [(dict(k), n) for k, n in c.items() if n > 1]
+
+
 def merge_into(by, period):
     """Every row in one month (a monthly report whose returns carry the dates of older invoices)."""
     return {period: [r for v in by.values() for r in v]}

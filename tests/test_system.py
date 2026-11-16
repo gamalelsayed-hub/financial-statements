@@ -407,3 +407,32 @@ def test_dashboard_screen_narrow_and_wide(company):
         assert page.cols == page._columns()
     page.open_diagnosis()
     assert win.reports_page.opened == "diag" and win.nav.row == 1
+
+
+def test_reports_tree_search_and_history(company):
+    pytest.importorskip("PySide6")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from fsapp.ui.system_window import ReportsPage
+    app = QApplication.instance() or QApplication([])
+
+    class Win:
+        def __init__(self):
+            self.places = []
+
+        def remember_place(self):
+            self.places.append(page.key())
+    win = Win()
+    win.db, win.ctx = company, Ctx(company)
+    win.params = lambda: R.Params(end="2026-03")
+    page = ReportsPage(win)
+    page.load()
+    assert page.key()
+    page.open_report("diag")
+    assert page.key() == "diag" and "diag" in win.places
+    page.filter_reports("الفروع")
+    shown = [c.text(0) for g, c in page._items() if not c.isHidden()]
+    assert shown and all("الفروع" in t for t in shown)
+    page.filter_reports("")
+    assert all(not c.isHidden() for _, c in page._items())
+    app.processEvents()

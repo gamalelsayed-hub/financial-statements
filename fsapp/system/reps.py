@@ -177,7 +177,12 @@ class Evaluation:
         if exact:
             return exact[0]
         part = [c for c, r in self.reps.items() if n in D.norm_name(r.name) or D.norm_name(r.name) in n]
-        return part[0] if len(part) == 1 else ""
+        if len(part) == 1:
+            return part[0]
+        # the same first name, and only one rep has it ("قاسم الراجحي" in the aging = "قاسم علي" in the list)
+        first = n.split()[0]
+        same = [c for c, r in self.reps.items() if D.norm_name(r.name).split()[:1] == [first]]
+        return same[0] if len(same) == 1 and len(n.split()) > 1 else ""
 
     # ---------------- data
     def _load_master(self):
@@ -223,7 +228,8 @@ class Evaluation:
             r.net = sum(v[1] for v in data.values())
             r.cost_goods = sum(v[2] for v in data.values())
         if not self.has_sales:
-            self.notes.append("⚠ لا يوجد ملف مبيعات بالمندوب (الأصناف أو العملاء) للفترة.")
+            self.notes.append("⚠ لا يوجد ملف مبيعات بالمندوب (الأصناف أو العملاء) لهذه الشهور، فالمناديب «غير مقيّمين». "
+                              "ارفع ملف المبيعات للفترة، أو اختر فترة يغطيها ملف مرفوع.")
 
     def _invoice_names(self):
         """Customer name → rep codes, also from «بيانات العملاء» and the latest customers' aging up to the period
@@ -339,7 +345,13 @@ class Evaluation:
                     r = self.rep(code)
                     r.opening = (r.opening or 0.0) + AG.customer_total(a)
         self.end_aging, self.open_aging = end, opening
-        if self.has_receipts and not self.has_closing:
+        rec_months = set(self.db.monthly_counts("receipts")) & set(self.months)
+        self.receipts_partial = bool(rec_months) and len(rec_months) < self.n
+        if self.receipts_partial:
+            self.notes.append("⚠ معيار التحصيل لم يُحسب: سندات القبض موجودة لـ "
+                              + "، ".join(range_label([m]) for m in sorted(rec_months))
+                              + " فقط من الفترة — ارفع سندات باقي الشهور، أو اختر فترة تغطيها السندات.")
+        elif self.has_receipts and not self.has_closing:
             self.notes.append(f"⚠ معيار التحصيل لم يُحسب: ارفع أعمار العملاء لشهر {range_label([self.last])} "
                               "من «البيانات الشهرية» (رصيد العملاء آخر الفترة).")
         elif not self.has_receipts:
@@ -367,11 +379,11 @@ class Evaluation:
         with_bal = [r for r in ev if r.coll_rate is not None]
         coll = sum(r.collected for r in with_bal)
         self.company_coll = safe_div(coll, coll + sum(r.closing for r in with_bal)) if with_bal else None
-        use_coll = self.has_closing and self.has_receipts and self.company_coll
+        use_coll = self.has_closing and self.has_receipts and self.company_coll and not self.receipts_partial
         cap, rc = self.cap, self.roi_cap
         for r in ev:
-            if not r.target_m:
-                continue
+            if not r.target_m or not self.has_sales:
+                continue   # no target, or no sales file for these months: not rated (a score of zeros would mislead)
             target = r.target_m * self.n
             vals = {"sales": safe_div(r.net, target),
                     "profit": safe_div(r.gp, target * (self.company_margin or 0)),

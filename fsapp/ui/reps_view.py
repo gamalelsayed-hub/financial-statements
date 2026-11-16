@@ -437,8 +437,15 @@ class DataTab(QWidget):
         elif not _ask(self, f"الملف فيه {len(by)} شهر — يتقسم على الشهور حسب التاريخ ويستبدل بيانات كل شهر منها؟"):
             return
         saver(by)
+        dups = D.exact_duplicates(by)
         n = sum(len(v) for v in by.values())
         msg = f"تم حفظ {label}: {n:,} سطر — " + "، ".join(f"{calc.month_label(k)} ({len(v)})" for k, v in sorted(by.items()))
+        if dups:
+            ex = dups[0][0]
+            msg += (f"\n⚠ {sum(k - 1 for _, k in dups)} سطر مكرر بالضبط داخل الملف (نفس الرقم والتاريخ والمبلغ) — اترفع كما هو؛ "
+                    f"راجعه في النظام. مثال: رقم {ex.get('vno') or ex.get('inv_no')} بمبلغ "
+                    f"{float(ex.get('amount') or ex.get('net') or 0):,.2f}.")
+            msg += "\nرفع نفس الملف مرة ثانية لا يكرر شيئًا: بيانات الشهر تُستبدل."
         if info["fixed_dates"]:
             msg += (f"\nصُحّح {info['fixed_dates']:,} تاريخ قلب فيه Excel اليوم والشهر "
                     "(مثل 10/02 اللي المقصود بيه 2 أكتوبر).")

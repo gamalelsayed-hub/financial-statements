@@ -6,14 +6,14 @@ import traceback
 
 from PySide6.QtCore import QMarginsF, QSettings, QSizeF, Qt
 from PySide6.QtCore import QUrl
-from PySide6.QtGui import (QAction, QColor, QDesktopServices, QFont, QPageLayout, QPageSize, QPdfWriter, QTextDocument,
+from PySide6.QtGui import (QAction, QColor, QDesktopServices, QFont, QKeySequence, QPageLayout, QPageSize, QPdfWriter, QTextDocument,
                            QTextOption)
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
     QRadioButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStyledItemDelegate, QTableWidget, QTableWidgetItem,
-    QTabWidget, QTextBrowser, QToolBar, QVBoxLayout, QWidget,
+    QTabWidget, QTextBrowser, QToolBar, QToolButton, QMenu, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .. import importer
@@ -1450,22 +1450,30 @@ class ReportsPage(QWidget):
         left = QWidget()
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
-        self.list = QListWidget()
-        self.list.setStyleSheet("QListWidget::item { padding: 5px; }")
-        for title, group in R.REPORT_GROUPS:
-            it = QListWidgetItem(title)
-            it.setFlags(Qt.NoItemFlags)
-            it.setForeground(QColor(NAVY))
-            f = it.font()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("🔍 ابحث عن تقرير ...")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self.filter_reports)
+        lv.addWidget(self.search)
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        self.tree.setIndentation(14)
+        self.tree.setStyleSheet("QTreeWidget::item { padding: 4px; }")
+        for title, items in R.subject_groups():
+            g = QTreeWidgetItem([title])
+            g.setFlags(Qt.ItemIsEnabled)
+            g.setForeground(0, QColor(NAVY))
+            f = g.font(0)
             f.setBold(True)
-            it.setFont(f)
-            self.list.addItem(it)
-            for key, name, _ in group:
-                i = QListWidgetItem(name)
-                i.setData(Qt.UserRole, key)
-                self.list.addItem(i)
-        self.list.currentItemChanged.connect(lambda *_: self.show_report())
-        lv.addWidget(self.list)
+            g.setFont(0, f)
+            for key, name in items:
+                c = QTreeWidgetItem([name])
+                c.setData(0, Qt.UserRole, key)
+                g.addChild(c)
+            self.tree.addTopLevelItem(g)
+        self.tree.currentItemChanged.connect(lambda *_: self._picked())
+        self.tree.itemClicked.connect(self._group_clicked)
+        lv.addWidget(self.tree)
         self.branch_lbl = QLabel("الفرع:")
         self.branch = QComboBox()
         self.branch.currentIndexChanged.connect(lambda *_: self.show_report())
@@ -1505,20 +1513,53 @@ class ReportsPage(QWidget):
         i = self.branch.findText(cur)
         self.branch.setCurrentIndex(max(0, i))
         self.branch.blockSignals(False)
-        if not self.list.currentItem():
-            self.list.setCurrentRow(1)
+        if not self.key():
+            self.open_report(QSettings().value("last_report", "summary") or "summary")
+        self.show_report()
+
+    def _items(self):
+        for i in range(self.tree.topLevelItemCount()):
+            g = self.tree.topLevelItem(i)
+            for j in range(g.childCount()):
+                yield g, g.child(j)
+
+    def _group_clicked(self, item, _col=0):
+        """A group title opens / closes its group (only the open groups take room)."""
+        if item.childCount():
+            item.setExpanded(not item.isExpanded())
+
+    def filter_reports(self, text):
+        """Show only the reports whose name has the typed words, with their groups open."""
+        words = text.strip().split()
+        for i in range(self.tree.topLevelItemCount()):
+            g = self.tree.topLevelItem(i)
+            shown = 0
+            for j in range(g.childCount()):
+                c = g.child(j)
+                ok = all(w in c.text(0) for w in words)
+                c.setHidden(not ok)
+                shown += ok
+            g.setHidden(shown == 0)
+            g.setExpanded(bool(words) and shown > 0 or (not words and g.isExpanded()))
+
+    def _picked(self):
+        key = self.key()
+        if key:
+            QSettings().setValue("last_report", key)
+            self.win.remember_place()
         self.show_report()
 
     def open_report(self, key):
-        """Select a report in the list by its key (used by the dashboard's checks chip)."""
-        for i in range(self.list.count()):
-            if self.list.item(i).data(Qt.UserRole) == key:
-                self.list.setCurrentRow(i)
+        """Select a report by its key and open its group (dashboard chip, back / forward, last report)."""
+        for g, c in self._items():
+            if c.data(0, Qt.UserRole) == key:
+                g.setExpanded(True)
+                self.tree.setCurrentItem(c)
                 return
 
     def key(self):
-        it = self.list.currentItem()
-        return it.data(Qt.UserRole) if it else None
+        it = self.tree.currentItem()
+        return it.data(0, Qt.UserRole) if it else None
 
     def show_report(self):
         key = self.key()
@@ -1595,6 +1636,18 @@ class SystemWindow(QMainWindow):
         tb.setMovable(False)
         tb.setStyleSheet("QToolBar { spacing: 6px; padding: 4px; } QToolButton { padding: 5px 10px; font-weight:600; }")
         self.addToolBar(tb)
+        self._hist, self._pos, self._restoring = [], -1, False
+        self.back_action = QAction("→ رجوع", self)
+        self.back_action.setToolTip("رجوع للشاشة أو التقرير السابق (Alt + ←)")
+        self.back_action.setShortcuts([QKeySequence("Alt+Left"), QKeySequence(QKeySequence.StandardKey.Back)])
+        self.back_action.triggered.connect(lambda: self.go_history(-1))
+        self.fwd_action = QAction("تقدم ←", self)
+        self.fwd_action.setToolTip("تقدم (Alt + →)")
+        self.fwd_action.setShortcuts([QKeySequence("Alt+Right"), QKeySequence(QKeySequence.StandardKey.Forward)])
+        self.fwd_action.triggered.connect(lambda: self.go_history(1))
+        tb.addAction(self.back_action)
+        tb.addAction(self.fwd_action)
+        tb.addSeparator()
         self.period = QComboBox()
         self.period.setMinimumWidth(130)
         self.nmonths = QComboBox()
@@ -1611,14 +1664,18 @@ class SystemWindow(QMainWindow):
         tb.addWidget(QLabel(" المقارنة مع: "))
         tb.addWidget(self.comp)
         tb.addSeparator()
-        for text, fn in (("📊 Excel (التقرير)", lambda: self.export("xlsx", False)),
-                         ("📄 PDF (التقرير)", lambda: self.export("pdf", False)),
-                         ("📚 Excel (كل التقارير)", lambda: self.export("xlsx", True)),
-                         ("📚 PDF (كل التقارير)", lambda: self.export("pdf", True))):
-            a = QAction(text, self)
-            a.triggered.connect(fn)
-            tb.addAction(a)
-        tb.addSeparator()
+        # exports in one menu so the bar stays short
+        exp = QToolButton()
+        exp.setText("📤 تصدير")
+        exp.setPopupMode(QToolButton.InstantPopup)
+        m = QMenu(exp)
+        for text, fn in (("📊 Excel — التقرير المعروض", lambda: self.export("xlsx", False)),
+                         ("📄 PDF — التقرير المعروض", lambda: self.export("pdf", False)),
+                         ("📚 Excel — كل التقارير", lambda: self.export("xlsx", True)),
+                         ("📚 PDF — كل التقارير", lambda: self.export("pdf", True))):
+            m.addAction(text, fn)
+        exp.setMenu(m)
+        tb.addWidget(exp)
         draft = QAction("📑 مسودة القوائم المالية", self)
         draft.triggered.connect(self.open_draft)
         tb.addAction(draft)
@@ -1637,12 +1694,22 @@ class SystemWindow(QMainWindow):
                 self.zoom_action = a
         self.zoom_action.setText(f"{zoom.level() * 100:.0f}%")
         zoom.on_change(self._zoom_changed)
-        up = QAction("🔄 فحص التحديثات", self)
-        up.triggered.connect(lambda: self.check_updates(manual=True))
-        tb.addAction(up)
-        sw = QAction("🔁 تبديل الشركة", self)
-        sw.triggered.connect(self.switch_company)
-        tb.addAction(sw)
+        more = QToolButton()
+        more.setText("☰")
+        more.setToolTip("المزيد")
+        more.setPopupMode(QToolButton.InstantPopup)
+        mm = QMenu(more)
+        mm.addAction("⟳ تحديث الشاشة (F5)", lambda: self.data_changed())
+        mm.addAction("🔄 فحص التحديثات", lambda: self.check_updates(manual=True))
+        mm.addAction("🔁 تبديل الشركة", lambda: self.switch_company())
+        mm.addSeparator()
+        mm.addAction("⌨ اختصارات لوحة المفاتيح", lambda: self.show_shortcuts())
+        more.setMenu(mm)
+        tb.addWidget(more)
+        refresh = QAction(self)
+        refresh.setShortcut("F5")
+        refresh.triggered.connect(lambda: self.data_changed())
+        self.addAction(refresh)
         self.updater = UpdateChecker(self)
         self.updater.result.connect(self._update_result)
         self.updater.failed.connect(self._update_failed)
@@ -1669,11 +1736,15 @@ class SystemWindow(QMainWindow):
             self.nav.addItem(title)
             self.stack.addWidget(page)
         self.nav.currentRowChanged.connect(self.stack.setCurrentIndex)
+        self.nav.currentRowChanged.connect(lambda *_: self.remember_place())
         h.addWidget(self.nav)
         h.addWidget(self.stack, 1)
         self.setCentralWidget(central)
         self.data_changed()
-        self.nav.setCurrentRow(0 if self.db.periods() else 3)
+        last = QSettings().value("last_page")
+        self.nav.setCurrentRow(int(last) if self.db.periods() and last not in (None, "") and 0 <= int(last) < len(self.pages)
+                               else (0 if self.db.periods() else 3))
+        self._update_history_buttons()
         self.check_updates(manual=False)
 
     def _zoom_changed(self):
@@ -1685,6 +1756,55 @@ class SystemWindow(QMainWindow):
         self.reports_page.show_report()
         self.dashboard.load()
         self.aging_page.load()
+
+    # -------- back / forward
+    def remember_place(self):
+        """Add the current screen (and report) to the history, like a browser."""
+        if self._restoring or self.nav.currentRow() < 0:
+            return
+        place = (self.nav.currentRow(), self.reports_page.key() if self.nav.currentRow() == 1 else None)
+        if self._pos >= 0 and self._hist[self._pos] == place:
+            return
+        self._hist = self._hist[:self._pos + 1] + [place]
+        self._hist = self._hist[-50:]
+        self._pos = len(self._hist) - 1
+        QSettings().setValue("last_page", place[0])
+        self._update_history_buttons()
+
+    def mousePressEvent(self, e):
+        """The mouse's side buttons go back / forward."""
+        if e.button() == Qt.BackButton:
+            self.go_history(-1)
+        elif e.button() == Qt.ForwardButton:
+            self.go_history(1)
+        else:
+            super().mousePressEvent(e)
+
+    def go_history(self, step):
+        i = self._pos + step
+        if not 0 <= i < len(self._hist):
+            return
+        self._pos = i
+        page, key = self._hist[i]
+        self._restoring = True
+        try:
+            self.nav.setCurrentRow(page)
+            if key:
+                self.reports_page.open_report(key)
+        finally:
+            self._restoring = False
+        self._update_history_buttons()
+
+    def _update_history_buttons(self):
+        self.back_action.setEnabled(self._pos > 0)
+        self.fwd_action.setEnabled(self._pos < len(self._hist) - 1)
+
+    def show_shortcuts(self):
+        info(self, "اختصارات لوحة المفاتيح:\n\n"
+                   "Alt + ←  /  Alt + →   رجوع / تقدم بين الشاشات والتقارير\n"
+                   "Ctrl + =  /  Ctrl + -  /  Ctrl + 0   تكبير / تصغير / الحجم العادي (أو Ctrl مع عجلة الماوس)\n"
+                   "F5   تحديث الشاشة\n"
+                   "في شاشة التقارير: اكتب في خانة البحث لتصفية قائمة التقارير، واضغط اسم المجموعة لفتحها أو قفلها.")
 
     # -------- helpers
     def _remember(self, path):

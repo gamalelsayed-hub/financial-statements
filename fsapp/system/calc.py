@@ -99,6 +99,28 @@ class Ctx:
     def is_pl(self, code):
         return self.section(code) in IS_SECTIONS
 
+    def continuity_breaks(self, per):
+        """Accounts whose opening in month per ≠ their closing in the month before: [(code, closing, opening)].
+
+        At the first month of the fiscal year the income accounts start again from zero and their total goes to
+        the retained earnings, so that year-end closing is not a break."""
+        prev = month_add(per, -1)
+        if prev not in self.tbs or per not in self.tbs:
+            return []
+        a, b = self.tbs[prev], self.tbs[per]
+        year_start = int(per[5:7]) == self.fiscal_start
+        pl_close = sum((a[c][5] or 0) - (a[c][6] or 0) for c in a if self.is_pl(c)) if year_start else 0.0
+        out = []
+        for code in set(a) | set(b):
+            ca = ((a[code][5] or 0) - (a[code][6] or 0)) if code in a else 0.0
+            ob = ((b[code][1] or 0) - (b[code][2] or 0)) if code in b else 0.0
+            if abs(ca - ob) <= 1:
+                continue
+            if year_start and (self.is_pl(code) or abs((ob - ca) - pl_close) <= 1):
+                continue
+            out.append((code, ca, ob))
+        return out
+
     # -------- periods
     def ytd_months(self, end):
         y, m = int(end[:4]), int(end[5:7])
@@ -404,6 +426,8 @@ class Ctx:
         out = {}
         for m in months:
             for code, amt in self.bmov.get(m, {}).get(branch, {}).items():
+                if self.is_bs(code):
+                    continue   # branch files that are full trial balances: only income accounts count
                 out[code] = out.get(code, 0.0) - (amt or 0.0)
         return out
 
