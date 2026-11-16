@@ -509,7 +509,7 @@ def rpt_summary(ev):
                                 safe_div(sum(r.inv_value for r in ev.evaluated()),
                                          sum(r.inv_count for r in ev.evaluated()))], "tot"))
     blocks.append(Table(cols, rows, fm, title="ترتيب المناديب"))
-    w = "، ".join(f"{label} {wt * 100:.0f}%" for _, label, wt in ev.weights_used())
+    w = "، ".join(f"{label} {wt * 100:.1f}%".replace(".0%", "%") for _, label, wt in ev.weights_used())
     blocks.append(Para(f"الأوزان: {w}. كل معيار يُقاس على تارجت المندوب أو متوسط الشركة بقيمته الفعلية، والدرجة كاملة "
                        f"عند {ev.cap * 100:.0f}% (العائد عند {ev.roi_cap:.1f} ضعف المتوسط). تكلفة المندوب = الراتب + الإقامة "
                        "+ التأمين + تكاليف أخرى، والعمولة تظهر ولا تدخل في التكلفة."))
@@ -536,7 +536,10 @@ def rpt_rep(ev, code):
         for k, label, wt in ev.weights_used():
             rows.append(Row(label, [r.parts.get(k, 0.0), wt * 100, safe_div(r.parts.get(k, 0.0), wt * 100)]))
         rows.append(Row("الدرجة", [r.score, 100, safe_div(r.score, 100)], "tot"))
-        blocks.append(Table(["المعيار", "الدرجة", "من", "النسبة"], rows, ["x", "d", "%"], title="تفصيل الدرجة"))
+        blocks.append(Table(["المعيار", "الدرجة", "من", "النسبة"], rows, ["x", "x", "%"], title="تفصيل الدرجة"))
+        if not ev.use_coll:
+            blocks.append(Para("التحصيل مش داخل الدرجة للفترة دي، فوزنه اتوزع على باقي المعايير بنسبتها "
+                               "(مثلاً المبيعات 35 من 80 = 43.75 من 100)."))
     target = r.target_m * ev.n
     perf = [Row("صافي المبيعات", [r.net, target or None, safe_div(r.net, target) if target else None]),
             Row("مجمل الربح", [r.gp, target * (ev.company_margin or 0) or None,

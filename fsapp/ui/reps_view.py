@@ -130,7 +130,7 @@ class RepCard(QFrame):
             got, top = r.parts.get(k, 0.0), wt * 100
             lb = QLabel(f"درجة {SHORT.get(k, label)}")
             lb.setStyleSheet(f"color:{NAVY}; font-weight:600; font-size:{pt(9)};")
-            val = QLabel(f"{got:,.1f} / {top:,.0f}")
+            val = QLabel(f"{got:,.1f} / {top:,.1f}".replace(".0 ", " ").removesuffix(".0"))
             val.setStyleSheet(f"color:{NAVY}; font-weight:700; font-size:{pt(9)};")
             bar = QProgressBar()
             bar.setRange(0, 1000)
@@ -223,8 +223,11 @@ class Board(QScrollArea):
             lbl.setWordWrap(True)
             lbl.setStyleSheet("color:#b54708; font-weight:600;" if n.startswith("⚠") else "color:#475467;")
             v.addWidget(lbl)
-        w = "، ".join(f"{label} {wt * 100:.0f}%" for _, label, wt in ev.weights_used())
-        lbl = QLabel(f"الأوزان: {w} — الكروت مرتبة حسب الدرجة.")
+        w = "، ".join(f"{label} {wt * 100:.1f}%".replace(".0%", "%") for _, label, wt in ev.weights_used())
+        extra = ("" if ev.use_coll else " — التحصيل مش داخل الدرجة للفترة دي، فوزنه اتوزع على باقي المعايير بنسبتها "
+                 "(عشان الدرجة تفضل من 100).")
+        lbl = QLabel(f"الأوزان: {w}{extra} — الكروت مرتبة حسب الدرجة.")
+        lbl.setWordWrap(True)
         lbl.setStyleSheet("color:#475467;")
         v.addWidget(lbl)
         grid = QGridLayout()
