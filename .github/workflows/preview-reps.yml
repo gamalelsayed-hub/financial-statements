@@ -2,6 +2,8 @@ name: Preview reps screen (temporary)
 on:
   push:
     branches: [feature/sales-reps]
+permissions:
+  contents: write
 jobs:
   preview:
     runs-on: windows-latest
@@ -13,7 +15,10 @@ jobs:
       - run: pip install -r requirements.txt pytest
       - run: python -m pytest -q tests/test_reps.py
       - run: python preview_reps.py preview
-      - uses: actions/upload-artifact@v4
-        with:
-          name: reps-preview
-          path: preview/*.png
+      - name: Push screenshots to a throwaway branch
+        shell: bash
+        run: |
+          mkdir shots && cp preview/*.png shots/
+          cd shots && git init -q -b preview-shots && git add . \
+            && git -c user.name=ci -c user.email=ci@example.com commit -q -m shots \
+            && git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" preview-shots
