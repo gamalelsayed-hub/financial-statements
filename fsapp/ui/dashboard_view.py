@@ -75,9 +75,23 @@ class DashboardPage(QScrollArea):
         self.box = None
 
     # ---------------------------------------------------------------- building
+    def _columns(self):
+        """Cards per row from the screen width (a narrow window wraps the cards instead of cutting them)."""
+        return max(1, min(4, (self.viewport().width() - 40) // 270))
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if self.data and self._columns() != getattr(self, "cols", 0):
+            self._build()
+
     def load(self):
         ctx, params = self.win.ctx, self.win.params()
         self.data = dashboard.compute(ctx, params.end) if (ctx and params) else None
+        self._build()
+
+    def _build(self):
+        ctx = self.win.ctx
+        self.cols = cols = self._columns()
         box = QWidget()
         box.setStyleSheet("background: #f5f7fa;")
         lay = QVBoxLayout(box)
@@ -98,7 +112,7 @@ class DashboardPage(QScrollArea):
             grid = QGridLayout()
             grid.setSpacing(10)
             for i, (t, v, l1, l2) in enumerate(d["cards"][key]):
-                grid.addWidget(Card(t, v, l1, l2, SECTION_ACCENT[key]), 0, i)
+                grid.addWidget(Card(t, v, l1, l2, SECTION_ACCENT[key]), i // cols, i % cols)
             lay.addLayout(grid)
         lay.addWidget(self._section_title("الخلاصة والتنبيهات"))
         lay.addWidget(self._alerts(d["alerts"]))
@@ -120,9 +134,9 @@ class DashboardPage(QScrollArea):
         ]
         grid = QGridLayout()
         grid.setSpacing(10)
-        for i, c in enumerate(charts):
-            if c is not None:
-                grid.addWidget(c, i // 2, i % 2)
+        per_row = 2 if self.viewport().width() >= 1000 else 1
+        for i, c in enumerate([c for c in charts if c is not None]):
+            grid.addWidget(c, i // per_row, i % per_row)
         lay.addLayout(grid)
         lay.addWidget(self._section_title(f"تحليل رأس المال العامل — نهاية {d['wc_first']} مقابل نهاية {d['label']}"))
         lay.addWidget(self._wc_table(d))
@@ -136,29 +150,41 @@ class DashboardPage(QScrollArea):
         self.setWidget(box)
 
     def _header(self, company, d):
-        h = QHBoxLayout()
+        """Title and month on the first rows; the checks chip and the export buttons on their own row, so a
+        narrow window never pushes them off the screen. The red chip opens «تشخيص الخلل»."""
         v = QVBoxLayout()
         t = QLabel(f"لوحة التحكم — {company}")
         t.setStyleSheet(f"color:{NAVY}; font-size:{pt(16)}; font-weight:700;")
+        t.setWordWrap(True)
         sub = QLabel(f"الشهر المعروض: {d['label']}   |   آخر شهر مُدخل: {d['last']}   |   "
                      "غيّر الشهر من «الفترة المنتهية في» أعلى الشاشة")
         sub.setStyleSheet("color:#475467;")
+        sub.setWordWrap(True)
         v.addWidget(t)
         v.addWidget(sub)
-        h.addLayout(v, 1)
+        h = QHBoxLayout()
         if d["fails"] is not None:
             ok = d["fails"] == 0
-            chip = QLabel("✓ المطابقات سليمة: الميزانية والتدفقات متوازنة" if ok else
-                          f"⚠ {d['fails']} فحص يحتاج مراجعة — افتح «تشخيص الخلل»")
-            chip.setStyleSheet(f"color:white; background:{STATUS['good'] if ok else STATUS['bad']}; "
-                               "border-radius:12px; padding:6px 12px; font-weight:700;")
+            chip = QPushButton("✓ المطابقات سليمة: الميزانية والتدفقات متوازنة" if ok else
+                               f"⚠ {d['fails']} فحص يحتاج مراجعة — اضغط لفتح «تشخيص الخلل»")
+            chip.setCursor(Qt.PointingHandCursor)
+            chip.setStyleSheet(f"QPushButton {{ color:white; background:{STATUS['good'] if ok else STATUS['bad']}; "
+                               "border:none; border-radius:12px; padding:6px 12px; font-weight:700; }")
+            chip.clicked.connect(self.open_diagnosis)
             h.addWidget(chip)
+        h.addStretch()
         for text, fn in (("📄 PDF", self.export_pdf), ("📊 Excel", self.export_excel)):
             b = QPushButton(text)
             b.setMinimumHeight(32)
             b.clicked.connect(fn)
             h.addWidget(b)
-        return h
+        v.addLayout(h)
+        return v
+
+    def open_diagnosis(self):
+        """Go to the reports screen on «تشخيص الخلل»."""
+        self.win.reports_page.open_report("diag")
+        self.win.nav.setCurrentRow(1)
 
     @staticmethod
     def _section_title(text):

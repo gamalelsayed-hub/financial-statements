@@ -365,3 +365,45 @@ def test_update_check_parsing():
     assert updater.parse_release({"tag_name": "v-x"}) is None
     assert updater.is_newer(12, current=11) and not updater.is_newer(12, current=12)
     assert not updater.is_newer(12, current=0)  # development copies never nag
+
+
+def test_hint_for_hidden_zero_balance_account():
+    from fsapp.system import diagnose
+    rows = {"1101": ("صندوق", 100.0, 0, 50.0, 0, 150.0, 0), "2101": ("مورد", 0, 130.0, 0, 20.0, 0, 150.0)}
+    # an account that started at 30 debit and closed to zero is missing: opening short 30 debit, movement short 30 credit
+    found = [f for f in diagnose.tb_imbalance_hints(rows) if "مخفي" in f.area]
+    assert found and abs(abs(found[0].amount) - 30) < 0.01
+
+
+def test_dashboard_screen_narrow_and_wide(company):
+    pytest.importorskip("PySide6")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from fsapp.ui.dashboard_view import DashboardPage
+    app = QApplication.instance() or QApplication([])
+
+    class Stub:
+        def __init__(self):
+            self.opened, self.row = None, None
+
+        def open_report(self, key):
+            self.opened = key
+
+        def setCurrentRow(self, r):
+            self.row = r
+
+    class Win:
+        pass
+    win = Win()
+    win.db, win.ctx = company, Ctx(company)
+    win.params = lambda: R.Params(end="2026-03")
+    win.reports_page = win.nav = Stub()
+    page = DashboardPage(win)
+    for w in (700, 1600):
+        page.resize(w, 900)
+        page.show()
+        page.load()
+        app.processEvents()
+        assert page.cols == page._columns()
+    page.open_diagnosis()
+    assert win.reports_page.opened == "diag" and win.nav.row == 1

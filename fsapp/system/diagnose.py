@@ -220,6 +220,14 @@ def tb_imbalance_hints(rows, tol=0.5):
                 out.append(Finding("error", f"توازن الميزان ({label})", "", "", pdiff,
                                    f"مجموع الحسابات الرئيسية ({len(parents)}) يساوي الفرق.",
                                    "الميزان يحتوي حسابات رئيسية مع فرعياتها — احذف الرئيسية عند الرفع."))
+    sums = [sum((r[i] or 0) for r in rows.values()) for i in range(1, 7)]
+    o_diff, m_diff, c_diff = sums[0] - sums[1], sums[2] - sums[3], sums[4] - sums[5]
+    if abs(c_diff) <= tol and abs(o_diff) > tol and abs(o_diff + m_diff) <= tol:
+        out.append(Finding("warn", "توازن الميزان (حساب مخفي)", "", "", o_diff,
+                           f"الختامي متوازن، والافتتاحي والحركة مختلفين بنفس المبلغ ({abs(o_diff):,.2f}) في اتجاهين عكس.",
+                           "غالبًا حساب رصيده الختامي صفر اختفى من التقرير (كان له رصيد أول الشهر واتقفل خلاله). "
+                           "صدّر الميزان من النظام مع «إظهار الحسابات ذات الرصيد الصفري». المركز المالي آخر الشهر سليم، "
+                           "لكن حركة الشهر والتدفقات ناقصة هذا الحساب."))
     for code, r in rows.items():
         gap = (r[1] or 0) - (r[2] or 0) + (r[3] or 0) - (r[4] or 0) - ((r[5] or 0) - (r[6] or 0))
         if abs(gap) > tol:

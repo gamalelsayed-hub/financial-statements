@@ -1029,6 +1029,17 @@ class DataPage(QWidget):
         msg = f"تم حفظ حركة الفروع لـ {label}:\n" + "\n".join(report)
         if total_new:
             msg += f"\n• {total_new} حساب جديد أضيف لشاشة الربط ويحتاج ربط."
+        accounts = db.accounts()
+        no_cat = {}
+        for b, brows in groups.items():
+            for a in importer.build_accounts(brows, 0, m):
+                acc = accounts.get(a.code)
+                if abs(a.mov_net) > 0.004 and not self.win.ctx.is_bs(a.code) and not (acc and acc.branch_cat):
+                    no_cat[a.code] = a.name
+        if no_cat:
+            msg += (f"\n⚠ {len(no_cat)} حساب إيراد/مصروف في حركة الفروع بدون «فئة دخل الفروع» فلا يظهر في تقرير "
+                    "الفروع — أعطها الفئة من «ربط الحسابات» (فلتر الحسابات الناقصة)، مثل: "
+                    + "، ".join(f"{c} {n}" for c, n in list(no_cat.items())[:5]))
         unknown = [b for b in groups if b not in [x for x, _ in db.branch_rows()]]
         if unknown:
             msg += "\n• فروع جديدة أضيفت للإعدادات: " + "، ".join(unknown)
@@ -1497,6 +1508,13 @@ class ReportsPage(QWidget):
         if not self.list.currentItem():
             self.list.setCurrentRow(1)
         self.show_report()
+
+    def open_report(self, key):
+        """Select a report in the list by its key (used by the dashboard's checks chip)."""
+        for i in range(self.list.count()):
+            if self.list.item(i).data(Qt.UserRole) == key:
+                self.list.setCurrentRow(i)
+                return
 
     def key(self):
         it = self.list.currentItem()
