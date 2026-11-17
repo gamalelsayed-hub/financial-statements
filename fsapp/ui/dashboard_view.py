@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QFileDialog, QFrame, QGridLayout, QHBoxLayout, QH
                                QPushButton, QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem, QToolTip,
                                QVBoxLayout, QWidget)
 
+from ..system import checklist as CL
 from ..system import dashboard, render
 from ..system import reports as R
 from .zoom import pt
@@ -172,6 +173,16 @@ class DashboardPage(QScrollArea):
                                "border:none; border-radius:12px; padding:6px 12px; font-weight:700; }")
             chip.clicked.connect(self.open_diagnosis)
             h.addWidget(chip)
+        params = self.win.params()
+        if self.win.ctx and params:
+            n, months = CL.summary(self.win.ctx, self.win.ctx.ytd_months(params.end))
+            chip2 = QPushButton("✓ قائمة التحقق: كل المدخلات مرفوعة" if not n else
+                                f"📋 قائمة التحقق: {n} مدخل ناقص في {len(months)} شهر — اضغط للتفاصيل")
+            chip2.setCursor(Qt.PointingHandCursor)
+            chip2.setStyleSheet(f"QPushButton {{ color:white; background:{STATUS['good'] if not n else STATUS['warn']}; "
+                                "border:none; border-radius:12px; padding:6px 12px; font-weight:700; }")
+            chip2.clicked.connect(self.open_checklist)
+            h.addWidget(chip2)
         h.addStretch()
         for text, fn in (("📄 PDF", self.export_pdf), ("📊 Excel", self.export_excel)):
             b = QPushButton(text)
@@ -180,6 +191,11 @@ class DashboardPage(QScrollArea):
             h.addWidget(b)
         v.addLayout(h)
         return v
+
+    def open_checklist(self):
+        """Second chip: the inputs checklist."""
+        self.win.reports_page.open_report("inputs")
+        self.win.nav.setCurrentRow(1)
 
     def open_diagnosis(self):
         """Go to the reports screen on «تشخيص الخلل»."""

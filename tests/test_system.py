@@ -451,3 +451,19 @@ def test_merged_reports_and_old_keys(company):
     assert R.build("su", ctx, R.Params(end="2026-03", n=3, view="monthly")).key == "m_su"
     assert R.build("exp", ctx, R.Params(end="2026-03", n=3, view="nonsense")).key == "exp"
     assert len(R.ALL_REPORTS) < len(list(R.all_variants()))
+
+
+def test_inputs_checklist(company):
+    from fsapp.system import checklist as CL
+    ctx = Ctx(company)
+    months = ctx.ytd_months("2026-03")
+    rows = {name: (used, cells) for name, used, cells, _ in CL.monthly_status(ctx, months)}
+    assert all(st == CL.OK for _, st in rows["ميزان المراجعة"][1].values())
+    assert not rows["سندات القبض"][0]                       # never uploaded → «not used», not missing
+    company.con.execute("DELETE FROM tb WHERE period='2026-02'")
+    company.con.commit()
+    ctx = Ctx(company)
+    n, miss = CL.summary(ctx, months)
+    assert n >= 1 and "2026-02" in miss
+    rep = R.build("inputs", ctx, R.Params(end="2026-03"))
+    assert rep.title == "قائمة تحقق المدخلات" and "✗" in str(rep.blocks[1].rows[0].values)

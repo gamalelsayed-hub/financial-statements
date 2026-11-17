@@ -790,7 +790,8 @@ class DataPage(QWidget):
                          ("🗑 حذف بيانات الشهر المحدد", self.delete_period)),
                         (("📥 مبيعات الأصناف لشهر", self.import_item_sales),
                          ("📥 مشتريات الأصناف لشهر", self.import_item_purchases),
-                         ("📥 ميزان سنة كاملة (للمقارنات السنوية)", self.import_annual))):
+                         ("📥 ميزان سنة كاملة (للمقارنات السنوية)", self.import_annual),
+                         ("✅ قائمة تحقق المدخلات", self.open_checklist))):
             bar = QHBoxLayout()
             for text, fn in buttons:
                 b = QPushButton(text)
@@ -1109,6 +1110,11 @@ class DataPage(QWidget):
         self.log.appendPlainText(msg)
         self.win.data_changed()
         info(self, msg)
+
+    def open_checklist(self):
+        """Opens the inputs checklist report: what was uploaded for each month and what is missing."""
+        self.win.reports_page.open_report("inputs")
+        self.win.nav.setCurrentRow(1)
 
     def delete_period(self):
         r = self.table.currentRow()

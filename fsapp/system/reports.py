@@ -6,6 +6,7 @@ from .defaults import BUCKET_NAMES, BS_SECTIONS, IS_SECTIONS
 from . import aging as AG
 from .blocks import Para, Report, Row, Table  # noqa: F401  (re-exported)
 from . import diagnose as D
+from . import checklist as CL
 
 
 @dataclass
@@ -903,6 +904,7 @@ def all_variants():
 PERIOD_REPORTS = [
     ("summary", "الملخص التنفيذي", rpt_summary),
     ("checks", "المطابقات وتشخيص الخلل", rpt_review),
+    ("inputs", "قائمة تحقق المدخلات", CL.rpt_inputs),
     ("bs", "المركز المالي", rpt_bs),
     ("is", "قائمة الدخل", rpt_is),
     ("cf", "التدفقات النقدية", rpt_cf),
@@ -930,7 +932,7 @@ REPORT_GROUPS = [("— تقارير الفترة —", PERIOD_REPORTS), ("— ا
                  ("— تقارير الأصناف —", ITEM_REPORTS), ("— المقارنات السنوية —", ANNUAL_REPORTS)]
 # the reports screen shows them by subject (a tree with collapsible groups); exports keep the order above
 SUBJECT_GROUPS = [
-    ("📌 نظرة عامة", ["summary", "checks", "ratios", "m_kpi"]),
+    ("📌 نظرة عامة", ["summary", "inputs", "checks", "ratios", "m_kpi"]),
     ("📑 القوائم المالية", ["bs", "is", "cf", "su"]),
     ("🗓 القوائم شهرًا بشهر", ["m_is", "m_bs", "m_cf"]),
     ("🏬 الفروع والمصروفات", ["branches", "m_br", "m_branch", "branch_exp", "exp"]),

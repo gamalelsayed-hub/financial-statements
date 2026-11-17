@@ -21,7 +21,7 @@ STAGES = [
                "from fsapp.system.calc import Ctx ثم ctx = Ctx(db) ثم ctx.is_figures(['2026-02'])['ni'] و ctx.bs_figures(['2026-02'], 2)['diff'] (لازم صفر لو كل الحسابات مربوطة).")},
     {"id": "s4", "title": "المرحلة 4: التقارير والفحوصات وعرضها",
      "files": ["fsapp/system/blocks.py", "fsapp/system/aging.py", "fsapp/categories.py", "fsapp/classifier.py",
-               "fsapp/system/diagnose.py", "fsapp/system/reports.py", "fsapp/system/render.py", "fsapp/system/dashboard.py"],
+               "fsapp/system/diagnose.py", "fsapp/system/checklist.py", "fsapp/system/reports.py", "fsapp/system/render.py", "fsapp/system/dashboard.py"],
      "intro": ("شكل التقرير، ثم كل التقارير، ثم تحويلها لـ HTML و Excel. categories و classifier من وضع التحليل السريع لكن التشخيص يحتاجهم لاقتراح الربط بالاسم، فتكتبهم هنا. "
                "تنبيه: في آخر reports.py علّق سطري الاستيراد من annual و item_reports واحذفهم من ALL_REPORTS و REPORT_GROUPS مؤقتًا، وترجعهم في المرحلتين 5 و 6."),
      "check": ("from fsapp.system import reports as R, render ثم rep = R.build('is', ctx, R.Params(end='2026-02')) ثم "
