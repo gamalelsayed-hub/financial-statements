@@ -449,11 +449,18 @@ class DataTab(QWidget):
                     f"راجعه في النظام. مثال: رقم {ex.get('vno') or ex.get('inv_no')} بمبلغ "
                     f"{float(ex.get('amount') or ex.get('net') or 0):,.2f}.")
             msg += "\nرفع نفس الملف مرة ثانية لا يكرر شيئًا: بيانات الشهر تُستبدل."
+        if info.get("page_dups"):
+            msg += (f"\nحُذف {info['page_dups']:,} سطر مكرر عند فواصل الصفحات (التقرير يعيد آخر سطر في الصفحة بعد العناوين).")
+        if info.get("ex_vat"):
+            msg += "\nالمبيعات محسوبة بدون ضريبة: مبلغ الفاتورة − الخصم."
+        if info.get("no_cost"):
+            msg += ("\n⚠ التقرير ما فيه عمود التكلفة: الربح في التقييم هيكون تقديري من نسبة تكلفة كل عميل في ملف "
+                    "العملاء بالمندوب. لو نظامكم يطلع الفواتير بالتكلفة ارفعها بيها أفضل.")
         if info["fixed_dates"]:
             msg += (f"\nصُحّح {info['fixed_dates']:,} تاريخ قلب فيه Excel اليوم والشهر "
                     "(مثل 10/02 اللي المقصود بيه 2 أكتوبر).")
         QMessageBox.information(self, "تم", msg)
-        self.page.reload()
+        self.win.data_changed()      # every page (the inputs checklist, the dashboard) sees the new months
 
     def import_invoices(self):
         self._monthly("تقرير الفواتير", D.parse_invoices, self.win.db.save_invoices, "الفواتير")

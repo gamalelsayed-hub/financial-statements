@@ -245,3 +245,13 @@ def test_month_without_sales_file_uses_invoices(db):
     assert ev.sales_kind == "invoices" and ev.reps["1001"].net == 120000 and ev.reps["1002"].gp == 10000
     assert ev.reps["1001"].score is not None
     assert any("من تقرير الفواتير" in n for n in ev.notes)
+
+
+def test_invoices_report_without_cost_and_with_page_breaks():
+    hd = ["رقم الفاتورة", "اسم المندوب", "التاريخ", "نوع الفاتورة", "رقم العميل", "اسم العميل", "مبلغ الفاتورة", "الخصم",
+          "الضريبة", "مبلغ الصافي بالمحلي"]
+    a = [2611301001, "شركة", "05/03/2026", "آجل", 501, "شركة الأولى", 1000, 100, 135, 1035]
+    rows = [hd, a, hd, list(a), [2611301002, "شركة", "20/03/2026", "نقد", 502, "مؤسسة الثانية", 500, None, 75, 575]]
+    by, info = D.parse_invoices(rows)
+    assert info["page_dups"] == 1 and info["ex_vat"] and info["no_cost"]
+    assert [x["net"] for x in by["2026-03"]] == [900, 500] and by["2026-03"][0]["cust_no"] == "501"

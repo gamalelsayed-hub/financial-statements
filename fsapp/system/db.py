@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS rep_sales(
     PRIMARY KEY(kind, p_from, p_to, rep, key));
 CREATE TABLE IF NOT EXISTS invoices(
     id INTEGER PRIMARY KEY, period TEXT, inv_no TEXT, itype TEXT, date TEXT, acct TEXT, cust_name TEXT,
-    net REAL, cost REAL);
+    net REAL, cost REAL, rep TEXT, cust_no TEXT);
 CREATE INDEX IF NOT EXISTS invoices_period ON invoices(period);
 CREATE TABLE IF NOT EXISTS receipts(
     id INTEGER PRIMARY KEY, period TEXT, vno TEXT, date TEXT, vtype TEXT, box TEXT, acct TEXT, acct_name TEXT,
@@ -73,7 +73,7 @@ ITEM_FIELDS = ["code", "name", "unit", "grp_main", "grp_sub1", "grp_sub2", "main
 SALES_FIELDS = ["cust_code", "cust_name", "item_code", "item_name", "unit", "qty", "free_qty", "sales", "ret_qty",
                 "returns", "net_qty", "net", "cnet", "cost"]
 REP_FIELDS = ["code", "name", "nationality", "salary", "target", "other", "active", "note"]
-INVOICE_FIELDS = ["inv_no", "itype", "date", "acct", "cust_name", "net", "cost"]
+INVOICE_FIELDS = ["inv_no", "itype", "date", "acct", "cust_name", "net", "cost", "rep", "cust_no"]
 RECEIPT_FIELDS = ["vno", "date", "vtype", "box", "acct", "acct_name", "analytic", "amount"]
 PURCHASE_FIELDS = ["supp_no", "supp_name", "currency", "item_code", "item_name", "unit", "qty", "net"]
 
@@ -106,10 +106,18 @@ class CompanyDB:
         self.path = path
         self.con = sqlite3.connect(path)
         self.con.executescript(SCHEMA)
+        self._add_columns("invoices", ("rep", "cust_no"))
         if not self.con.execute("SELECT 1 FROM settings LIMIT 1").fetchone():
             self._seed()
         self._drop_total_rows()
         self.con.commit()
+
+    def _add_columns(self, table, cols):
+        """Columns added by a newer version to a table of an older company file."""
+        have = {r[1] for r in self.con.execute(f"PRAGMA table_info({table})")}
+        for c in cols:
+            if c not in have:
+                self.con.execute(f"ALTER TABLE {table} ADD COLUMN {c} TEXT")
 
     def _drop_total_rows(self):
         """Footer rows of a system report saved as accounts by older versions (code with no digits, like

@@ -57,6 +57,27 @@ def col_of(header, *words, exclude=()):
     return None
 
 
+def page_rows(body, header):
+    """Rows of a printed report without its page breaks. The header repeats on every page, and the system
+    repeats the last row of a page after it: that copy is dropped. Returns (rows, copies dropped)."""
+    head = [text(x) for x in header]
+    out, dropped, last, after_head = [], 0, None, False
+    for r in body:
+        if [text(x) for x in r] == head:
+            after_head = True
+            continue
+        if not any(x not in (None, "") for x in r):
+            continue
+        if after_head and last is not None and list(r) == list(last):
+            dropped += 1
+            after_head = False
+            continue
+        after_head = False
+        out.append(r)
+        last = r
+    return out, dropped
+
+
 # ------------------------------------------------------------------ sales by rep
 def parse_rep_sales(rows):
     """Items-by-rep or customers-by-rep report → (kind, rows). kind: items | customers."""
@@ -194,20 +215,28 @@ def parse_invoices(rows, fallback=None):
     hd = rows[h]
     c = {"inv_no": col_of(hd, "رقم الفاتورة"), "itype": col_of(hd, "نوع الفاتورة", "النوع"),
          "date": col_of(hd, "تاريخ"), "acct": col_of(hd, "رقم الحساب"), "cust_name": col_of(hd, "اسم الحساب", "اسم العميل"),
-         "net": col_of(hd, "صافي"), "cost": col_of(hd, "التكلفة", exclude=("نسبة",))}
-    body = [r for r in rows[h + 1:] if r[c["inv_no"]] not in (None, "") or (c["cust_name"] is not None and r[c["cust_name"]])]
+         "net": col_of(hd, "صافي"), "cost": col_of(hd, "التكلفة", exclude=("نسبة",)),
+         "amount": col_of(hd, "مبلغ الفاتورة"), "discount": col_of(hd, "الخصم"),
+         "rep": col_of(hd, "اسم المندوب", "المندوب"), "cust_no": col_of(hd, "رقم العميل")}
+    # a report with «مبلغ الفاتورة» and «الخصم»: its «صافي» includes the VAT, so the sale is amount − discount
+    ex_vat = c["amount"] is not None and c["discount"] is not None
+    body, dropped = page_rows(rows[h + 1:], hd)
+    body = [r for r in body if r[c["inv_no"]] not in (None, "") or (c["cust_name"] is not None and r[c["cust_name"]])]
     recs = []
     for r in body:
         g = lambda k: r[c[k]] if c[k] is not None else None  # noqa: E731
         no = g("inv_no")
         if isinstance(no, float):
             no = f"{no:.0f}"
+        net = ((to_number(g("amount")) or 0.0) - (to_number(g("discount")) or 0.0)) if ex_vat else \
+            (to_number(g("net")) or 0.0)
         recs.append({"inv_no": text(no), "itype": text(g("itype")), "acct": text(g("acct")),
-                     "cust_name": text(g("cust_name")), "net": to_number(g("net")) or 0.0,
-                     "cost": to_number(g("cost"))})
+                     "cust_name": text(g("cust_name")), "net": net, "cost": to_number(g("cost")),
+                     "rep": text(g("rep")), "cust_no": text(g("cust_no"))})
     dates, fixed = read_dates([r[c["date"]] if c["date"] is not None else None for r in body])
     by, no_date = _by_month(recs, dates, fallback)
-    return by, {"rows": len(recs), "fixed_dates": fixed, "no_date": no_date}
+    return by, {"rows": len(recs), "fixed_dates": fixed, "no_date": no_date, "page_dups": dropped,
+                "ex_vat": ex_vat, "no_cost": c["cost"] is None}
 
 
 # ------------------------------------------------------------------ receipts
@@ -220,7 +249,8 @@ def parse_receipts(rows, fallback=None):
     c = {"vno": col_of(hd, "رقم السند"), "date": col_of(hd, "تاريخ السند", "تاريخ"), "vtype": col_of(hd, "نوع السند"),
          "box": col_of(hd, "الصندوق", "البنك"), "acct": col_of(hd, "رقم الحساب"), "acct_name": col_of(hd, "اسم الحساب"),
          "analytic": col_of(hd, "التحليلي"), "amount": col_of(hd, "المبلغ")}
-    body = [r for r in rows[h + 1:] if to_number(r[c["amount"]])]
+    body, dropped = page_rows(rows[h + 1:], hd)
+    body = [r for r in body if to_number(r[c["amount"]])]
     recs = []
     for r in body:
         g = lambda k: r[c[k]] if c[k] is not None else None  # noqa: E731
@@ -229,7 +259,7 @@ def parse_receipts(rows, fallback=None):
                      "amount": to_number(g("amount")) or 0.0})
     dates, fixed = read_dates([r[c["date"]] if c["date"] is not None else None for r in body])
     by, no_date = _by_month(recs, dates, fallback)
-    return by, {"rows": len(recs), "fixed_dates": fixed, "no_date": no_date}
+    return by, {"rows": len(recs), "fixed_dates": fixed, "no_date": no_date, "page_dups": dropped}
 
 
 # ------------------------------------------------------------------ rep settings and commissions

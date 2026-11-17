@@ -176,6 +176,10 @@ class Evaluation:
         exact = [c for c, r in self.reps.items() if D.norm_name(r.name) == n]
         if exact:
             return exact[0]
+        # the same name written without its spaces ("عبدالعزيزالعمودي")
+        bare = [c for c, r in self.reps.items() if D.norm_name(r.name).replace(" ", "") == n.replace(" ", "")]
+        if len(bare) == 1:
+            return bare[0]
         part = [c for c, r in self.reps.items() if n in D.norm_name(r.name) or D.norm_name(r.name) in n]
         if len(part) == 1:
             return part[0]
@@ -265,8 +269,10 @@ class Evaluation:
                 by_prefix[(x["inv_no"] or "")[:7]][next(iter(c))] += 1
         for x, c in zip(inv, cands):
             pre = by_prefix.get((x["inv_no"] or "")[:7], {})
-            code = ""
-            if len(c) == 1:
+            code = self.rep_key(x.get("rep")) if x.get("rep") else ""   # the report names the rep itself
+            if code:
+                pass
+            elif len(c) == 1:
                 code = next(iter(c))
             elif len(c) > 1:
                 code = max(c, key=lambda k: pre.get(k, 0))
@@ -296,26 +302,58 @@ class Evaluation:
         if self.has_sales or not inv:
             return
         months = {x["period"] for x in inv}
-        with_cost = sum(1 for x in inv if x["cost"] is not None)
-        if not set(self.months) <= months or with_cost < 0.95 * len(inv):
+        if not set(self.months) <= months:
             return
+        ratio = self._cost_ratios()
+        self.cost_estimated = [0, 0.0]
         for x in inv:
             code = x.get("_rep")
             if not code:
                 continue
             r = self.rep(code)
+            cost = x["cost"]
+            if cost is None:      # a report without cost: the customer's cost ratio over the sales-by-rep file
+                k = ratio["cust"].get(x.get("cust_no") or "") or ratio["name"].get(D.norm_name(x["cust_name"])) \
+                    or ratio["rep"].get(code) or ratio["all"]
+                cost = (x["net"] or 0.0) * k
+                self.cost_estimated[0] += 1
+                self.cost_estimated[1] += x["net"] or 0.0
+            x["cost"] = cost
             r.net += x["net"] or 0.0
-            r.cost_goods += x["cost"] or 0.0
+            r.cost_goods += cost
             c = r.customers.setdefault(D.norm_name(x["cust_name"]), [x["cust_name"], 0.0, 0.0])
             c[1] += x["net"] or 0.0
             c[2] += x["cost"] or 0.0
         self.has_sales, self.sales_kind = True, "invoices"
         # the range files that don't fit the period don't matter any more
         self.notes = [n for n in self.notes if n != self.no_sales_note and "يتعدى حدود الفترة" not in n]
+        if self.cost_estimated[0]:
+            self.notes.append(f"⚠ تقرير الفواتير بدون تكلفة: تكلفة {self.cost_estimated[0]:,} فاتورة "
+                              f"({self.cost_estimated[1]:,.0f}) تقديرية — نسبة تكلفة نفس العميل في ملف العملاء بالمندوب، "
+                              "ولو العميل مش فيه فنسبة المندوب، ثم نسبة الشركة. الربح والهامش لهذه الشهور تقريبي.")
         share = safe_div(self.inv_unlinked[1], sum(x["net"] or 0.0 for x in inv))
         self.notes.append(f"المبيعات والتكلفة من تقرير الفواتير (لا يوجد ملف مبيعات بالمندوب لهذه الشهور). "
                           f"فواتير بدون مندوب: {self.inv_unlinked[0]} بقيمة {self.inv_unlinked[1]:,.0f} "
                           f"({(share or 0) * 100:.1f}% من المبيعات) لا تدخل في أي مندوب.")
+
+    def _cost_ratios(self):
+        """Cost ÷ sales per customer (number and name), per rep and for the company, from every customers-by-rep
+        file uploaded (for invoices that carry no cost)."""
+        acc = {"cust": defaultdict(lambda: [0.0, 0.0]), "name": defaultdict(lambda: [0.0, 0.0]),
+               "rep": defaultdict(lambda: [0.0, 0.0])}
+        tot = [0.0, 0.0]
+        for r in self.db.rep_sales("customers"):
+            net, cost = r["net"] or 0.0, r["cost"] or 0.0
+            for kind, k in (("cust", str(r.get("key") or "")), ("name", D.norm_name(r["name"])), ("rep", r["rep"])):
+                if k:
+                    acc[kind][k][0] += net
+                    acc[kind][k][1] += cost
+            tot[0] += net
+            tot[1] += cost
+        sane = lambda v: v[1] / v[0] if v[0] > 0 and 0 < v[1] / v[0] < 1.5 else None  # noqa: E731
+        out = {kind: {k: x for k, v in d.items() if (x := sane(v))} for kind, d in acc.items()}
+        out["all"] = sane(tot) or 0.0
+        return out
 
     def _load_commissions(self):
         com = self.db.commissions()
