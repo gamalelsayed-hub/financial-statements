@@ -6,6 +6,7 @@ STAGES = [
      "check": "اكتب python -c \"import PySide6, openpyxl, pdfplumber\" ولو ما طلع خطأ فالتجهيز تمام."},
     {"id": "s1", "title": "المرحلة 1: ملف الشركة وقاعدة البيانات",
      "files": ["fsapp/version.py", "fsapp/system/defaults.py", "fsapp/system/db.py"],
+     "after": "git.html", "after_id": "git", "after_title": "استراحة: احفظ شغلك بـ Git",
      "intro": "تبدأ بالبيانات: وين تنحفظ وكيف تنقرأ. ما فيه شاشات ولا حسابات بعد.",
      "check": ("في سطر أوامر بايثون (اكتب python): from fsapp.system.db import CompanyDB ثم db = CompanyDB('test.fsdb') ثم "
                "db.list_names('fs_items')[:5] — لازم تطلع أول 5 بنود. وجرب db.save_tb('2026-01', [('1101', 'صندوق', 0, 0, 100, 0, 100, 0)]) ثم db.tb('2026-01').")},

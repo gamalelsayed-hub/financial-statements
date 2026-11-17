@@ -1,0 +1,116 @@
+<section class="start" id="git">
+  <h2>استراحة بعد المرحلة 1: احفظ شغلك بـ Git</h2>
+  <p class="lead">خلصت أول ثلاث ملفات وشغالة؟ هذا أحسن وقت تتعلم تحفظ «لقطة» من شغلك، عشان لو خربت شي بعدين ترجع له. القسم هذا مو إجباري، بس بيوفر عليك وقت كثير.</p>
+
+  <div class="block">
+    <h3><span class="num">1</span> وش هو Git، ووش الفرق بينه وبين GitHub؟</h3>
+    <div class="flow" dir="rtl">
+      <div class="fbox"><b>Git</b><span>برنامج على جهازك يسجل تاريخ كل تعديل في الكود. مثل دفتر اليومية: كل قيد بتاريخه وشرحه.</span></div>
+      <div class="fbox"><b>GitHub</b><span>موقع تحفظ فيه نسخة من هالتاريخ برا جهازك. مثل الأرشيف في المقر الرئيسي.</span></div>
+    </div>
+    <p>تبدأ بـ <b>Git بس</b> على جهازك. GitHub تضيفه بعدين لما تتعود (آخر القسم).</p>
+    <p><b>الكلمة الأهم:</b> <bdi dir="ltr"><code>commit</code></bdi> (التزام) = لقطة محفوظة من كل ملفات المشروع في لحظة معينة، ومعها جملة تشرح وش تغير. فكر فيها كقيد يومية.</p>
+  </div>
+
+  <div class="block">
+    <h3><span class="num">2</span> التثبيت والإعداد (مرة وحدة بس)</h3>
+    <ol>
+      <li>نزّل Git من <bdi dir="ltr"><code>git-scm.com</code></bdi> ← Download for Windows، وثبّته وخلّ كل الخيارات زي ما هي (Next لين النهاية).</li>
+      <li>اقفل VS Code وافتحه من جديد عشان يشوف Git.</li>
+      <li>في شاشة الأوامر (<bdi dir="ltr"><code>Ctrl + `</code></bdi>) اكتب اسمك وإيميلك، عشان كل لقطة يتسجل مين سواها:</li>
+    </ol>
+    <div class="code"><button type="button" class="copy">نسخ</button><pre dir="ltr"><code>git config --global user.name "اسمك"
+git config --global user.email "ايميلك@example.com"</code></pre></div>
+    <p>تأكد إنه تثبت: <bdi dir="ltr"><code>git --version</code></bdi> لازم يطلع رقم مثل <bdi dir="ltr"><code>git version 2.47.0</code></bdi>.</p>
+  </div>
+
+  <div class="block">
+    <h3><span class="num">3</span> أول لقطة: من الأزرار بدون أوامر</h3>
+    <figure class="mock-wrap">
+      <div class="mock" dir="ltr">
+        <div class="bar"><i></i><i></i><i></i><span>Source Control — fsapp-project — Visual Studio Code</span></div>
+        <div class="vsc-body" style="grid-template-columns:34px 250px minmax(0,1fr)">
+          <div class="act"><span>▣</span><span>⌕</span><span class="ext">⑂<em class="pin">1</em></span></div>
+          <div class="side">
+            <div class="side-h">SOURCE CONTROL</div>
+            <div class="t" style="white-space:normal;padding:4px 10px;display:flex;gap:6px;align-items:center"><span dir="rtl" style="flex:1;border:1px solid var(--m-line);border-radius:4px;padding:4px 6px;color:var(--m-hi);font-family:var(--f-body)">المرحلة 1: version و defaults و db</span><em class="pin">3</em></div>
+            <div class="t" style="padding:6px 10px"><span style="display:inline-block;background:#2f6fb3;color:#fff;border-radius:4px;padding:3px 10px">✓ Commit</span> <em class="pin">4</em></div>
+            <div class="t" style="color:var(--m-dim)">▾ Changes <em class="pin">2</em></div>
+            <div class="t l1">fsapp/version.py <span style="color:#6fa36a">U</span></div>
+            <div class="t l1">fsapp/system/db.py <span style="color:#6fa36a">U</span></div>
+            <div class="t l1">fsapp/system/defaults.py <span style="color:#6fa36a">U</span></div>
+          </div>
+          <div class="main-col"><pre class="ed" style="padding:12px 14px;margin:0"><span class="cm">U = new file</span>
+<span class="cm">M = modified</span></pre></div>
+        </div>
+      </div>
+      <figcaption>
+        <span class="pin">1</span> أيقونة Source Control (شكلها فروع) أو <bdi dir="ltr"><code>Ctrl + Shift + G</code></bdi> &nbsp;
+        <span class="pin">2</span> الملفات اللي تغيرت &nbsp;
+        <span class="pin">3</span> اكتب وش سويت &nbsp;
+        <span class="pin">4</span> زر الحفظ (Commit). وجنب كل ملف حرف: U ملف جديد، M ملف تعدّل
+      </figcaption>
+    </figure>
+    <ol>
+      <li>اضغط أيقونة Source Control <span class="pin">1</span>.</li>
+      <li>أول مرة بس: يطلع زر <b>Initialize Repository</b>، اضغطه. كذا فتحت «دفتر يومية» للمشروع (يسوي مجلد مخفي اسمه <bdi dir="ltr"><code>.git</code></bdi>، لا تلمسه).</li>
+      <li>تطلع ملفاتك تحت <b>Changes</b> <span class="pin">2</span>.</li>
+      <li>في المربع <span class="pin">3</span> اكتب جملة تشرح وش سويت، مثل: «المرحلة 1: version و defaults و db».</li>
+      <li>اضغط <b>Commit</b> <span class="pin">4</span>. لو سألك «ما فيه ملفات مجهزة، تبي أجهز الكل؟» اضغط <b>Yes</b> أو <b>Always</b>.</li>
+    </ol>
+    <p>خلاص، هذي أول لقطة. القائمة تفضى لأن ما فيه تغيير من آخر لقطة.</p>
+  </div>
+
+  <div class="block">
+    <h3><span class="num">4</span> الروتين: بعد كل ملف تخلصه</h3>
+    <div class="flow" dir="rtl">
+      <div class="fbox"><b>1. اكتب الملف</b><span>من الدليل، دالة دالة</span></div>
+      <div class="farrow">←</div>
+      <div class="fbox"><b>2. جرّبه</b><span>التجربة اللي في آخر المرحلة</span></div>
+      <div class="farrow">←</div>
+      <div class="fbox"><b>3. شغال؟ خذ لقطة</b><span>Ctrl+Shift+G، اكتب الشرح، Commit</span></div>
+    </div>
+    <p><b>قاعدتين:</b> خذ لقطة لما يكون الكود <b>شغال</b>، مو وهو نص مكتوب. والشرح يكون واضح يفهمه أي أحد: «إضافة قراءة الميزان من إكسيل» أحسن من «تعديل».</p>
+  </div>
+
+  <div class="block">
+    <h3><span class="num">5</span> خربت شي؟ ثلاث طرق ترجع فيها</h3>
+    <div class="errs">
+      <table>
+        <thead><tr><th>الموقف</th><th>وش تسوي</th></tr></thead>
+        <tbody>
+          <tr><td>تبي تشوف وش غيرت من آخر لقطة</td><td>في Source Control اضغط على اسم الملف. ينفتح على الجانبين: يسار القديم، يمين الجديد. الأحمر انحذف والأخضر انضاف.</td></tr>
+          <tr><td>ملف واحد خربته وتبي ترجعه زي آخر لقطة</td><td>وقّف بالماوس على اسم الملف في Changes واضغط السهم المنحني (Discard Changes). <b>انتبه:</b> تعديلاتك عليه من آخر لقطة تروح.</td></tr>
+          <tr><td>تبي تشوف كل اللقطات القديمة</td><td>تحت في Source Control قسم <b>Graph</b> أو <b>Timeline</b>: كل لقطة بتاريخها وشرحها، وتضغط عليها تشوف وش تغير فيها.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="block">
+    <h3><span class="num">6</span> نفس الشي بالأوامر (للمعرفة)</h3>
+    <p>الأزرار تسوي هالأوامر من ورا. تعرفها عشان لو شفتها في مكان تفهمها:</p>
+    <div class="code"><button type="button" class="copy">نسخ</button><pre dir="ltr"><code>git init                      # ابدأ دفتر يومية للمشروع (مرة وحدة)
+git status                    # وش الملفات اللي تغيرت؟
+git add .                     # جهّز كل التعديلات للقطة
+git commit -m "شرح التعديل"    # خذ اللقطة
+git log --oneline             # اعرض كل اللقطات
+git diff                      # وش تغير من آخر لقطة بالضبط</code></pre></div>
+  </div>
+
+  <div class="block">
+    <h3><span class="num">7</span> بعدين: نسخة على GitHub</h3>
+    <p>لما تتعود على اللقطات، تقدر ترفعها على GitHub عشان تكون عندك نسخة احتياطية وتشتغل من أكثر من جهاز:</p>
+    <ol>
+      <li>سوّ حساب على <bdi dir="ltr"><code>github.com</code></bdi> (أو استخدم حسابك الحالي).</li>
+      <li>في Source Control اضغط <b>Publish Branch</b>، واختر <b>Private</b> (خاص، ما يشوفه غيرك).</li>
+      <li>يطلب منك تسجيل الدخول لـ GitHub من المتصفح مرة وحدة.</li>
+      <li>بعدها كل ما تاخذ لقطة اضغط <b>Sync Changes</b> عشان ترفعها.</li>
+    </ol>
+    <p><b>تنبيه مهم:</b> لا ترفع أبدًا ملفات فيها بيانات حقيقية (موازين، تقارير عملاء، ملفات <bdi dir="ltr"><code>.fsdb</code></bdi>). خلّها في مجلد برا المشروع، أو سوّ ملف اسمه <bdi dir="ltr"><code>.gitignore</code></bdi> في المشروع واكتب فيه أسماء الأشياء اللي Git يتجاهلها:</p>
+    <div class="code"><button type="button" class="copy">نسخ</button><pre dir="ltr"><code>*.fsdb
+*.xlsx
+*.pdf
+__pycache__/</code></pre></div>
+  </div>
+</section>

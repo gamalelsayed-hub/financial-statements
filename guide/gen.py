@@ -102,8 +102,12 @@ def build():
             f.append("</details>")
             sec.append("".join(f))
         sec.append(f'<div class="check"><b>جرّب قبل ما تكمل:</b> {inline(st["check"])}</div></section>')
+        if st.get("after"):
+            sec.append(open(st["after"], encoding="utf-8").read())
         body.append("".join(sec))
         toc.append("</ul></li>")
+        if st.get("after"):
+            toc.append(f'<li class="toc-stage"><a href="#{st["after_id"]}">{E(st["after_title"])}</a></li>')
     return "".join(toc), "".join(body), n_files, n_pieces, n_lines
 
 
