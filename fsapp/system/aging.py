@@ -4,7 +4,12 @@ Customers: overdue = over 30 days for custody ("عهدة") customers, over 60 da
 Suppliers: overdue = the buckets beyond the supplier's credit period, converted with the currency rate.
 """
 
+import datetime
+import re
+
 BUCKETS = ["b0", "b1", "b2", "b3", "b4"]
+MONTHS_AR = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر",
+             "ديسمبر"]
 BUCKET_NAMES = ["0 - 30", "31 - 60", "61 - 90", "91 - 120", "أكثر من 120"]
 
 
@@ -104,3 +109,43 @@ def suppliers_summary(rows, rate_map, base):
         if o > 0.005:
             over.append(r)
     return {"count": len(rows), "total": tot, "overdue": od, "no_rate": len(no_rate), "over_count": len(over)}
+
+
+# ---------------------------------------------------------------- one file for several months / several types
+def parse_month(v):
+    """A month cell → 'YYYY-MM': 2026-03, 2026/3, 03/2026, a real date, or «مارس 2026». None if not a month."""
+    if isinstance(v, (datetime.date, datetime.datetime)):
+        return f"{v.year:04d}-{v.month:02d}"
+    t = str(v or "").strip().replace("إ", "ا").replace("أ", "ا")
+    m = re.match(r"^(\d{4})\s*[-/.]\s*(\d{1,2})(?:\s*[-/.]\s*\d{1,2})?$", t)
+    if m and 1 <= int(m.group(2)) <= 12:
+        return f"{int(m.group(1)):04d}-{int(m.group(2)):02d}"
+    m = re.match(r"^(?:\d{1,2}\s*[-/.]\s*)?(\d{1,2})\s*[-/.]\s*(\d{4})$", t)
+    if m and 1 <= int(m.group(1)) <= 12:
+        return f"{int(m.group(2)):04d}-{int(m.group(1)):02d}"
+    y = re.search(r"(\d{4})", t)
+    if y:
+        for i, name in enumerate(MONTHS_AR, 1):
+            if name.replace("أ", "ا") in t:
+                return f"{int(y.group(1)):04d}-{i:02d}"
+    return None
+
+
+def split_by_month(rows):
+    """Rows that carry a «month» field → ({month: rows}, rows whose month could not be read)."""
+    out, bad = {}, 0
+    for r in rows:
+        p = parse_month(r.get("month"))
+        if p:
+            out.setdefault(p, []).append(r)
+        else:
+            bad += 1
+    return out, bad
+
+
+def merge_aging(existing, new):
+    """Add a file of one type (e.g. «عهدة») to a month that already has another (e.g. «آجل»): a customer of the
+    same number and type is replaced by the new row, everything else is kept."""
+    key = lambda r: (str(r.get("no") or r.get("name") or "").strip(), (r.get("ctype") or "").strip())  # noqa: E731
+    new_keys = {key(r) for r in new}
+    return [r for r in existing if key(r) not in new_keys] + list(new)

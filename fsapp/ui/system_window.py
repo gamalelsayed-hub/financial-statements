@@ -10,7 +10,7 @@ from PySide6.QtGui import (QAction, QColor, QDesktopServices, QFont, QKeySequenc
                            QTextOption)
 from PySide6.QtWidgets import (
     QAbstractItemView, QApplication, QButtonGroup, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+    QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPlainTextEdit, QPushButton,
     QRadioButton, QScrollArea, QSpinBox, QSplitter, QStackedWidget, QStyledItemDelegate, QTableWidget, QTableWidgetItem,
     QTabWidget, QTextBrowser, QToolBar, QToolButton, QMenu, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
@@ -97,14 +97,15 @@ ROLE_LABELS = {
     "no": "الرقم", "aname": "الاسم", "region": "المنطقة", "rep": "المندوب", "cls": "التصنيف",
     "ctype": "النوع (آجل / عهدة / نقدي)", "b0": "0 - 30", "b1": "31 - 60", "b2": "61 - 90", "b3": "91 - 120",
     "b4": "أكثر من 120", "guarantee": "ضمان بنكي", "account": "رقم الحساب", "credit": "فترة الائتمان (يوم)",
-    "currency": "العملة",
+    "currency": "العملة", "month": "الشهر (لشيت فيه عدة شهور)",
     "supp_no": "رقم المورد", "supp_name": "اسم المورد", "item_code": "رقم الصنف", "item_name": "اسم الصنف",
     "unit": "الوحدة", "qty": "الكمية", "net": "صافي المبلغ",
 }
 
 AGING_ROLES = {
-    "customers": ["no", "aname", "region", "branch", "rep", "cls", "ctype", "b0", "b1", "b2", "b3", "b4", "guarantee"],
-    "suppliers": ["no", "aname", "account", "credit", "currency", "b0", "b1", "b2", "b3", "b4"],
+    "customers": ["no", "aname", "region", "branch", "rep", "cls", "ctype", "b0", "b1", "b2", "b3", "b4", "guarantee",
+                  "month"],
+    "suppliers": ["no", "aname", "account", "credit", "currency", "b0", "b1", "b2", "b3", "b4", "month"],
 }
 AGING_WORDS = {
     "no": ("رقم العميل", "رقم المورد", "كود العميل", "كود المورد", "الرقم", "رقم"),
@@ -113,7 +114,7 @@ AGING_WORDS = {
     "ctype": ("نوع العميل", "النوع", "نوع"), "b0": ("0 - 30", "0-30", "حالي"), "b1": ("31 - 60", "31-60"),
     "b2": ("61 - 90", "61-90"), "b3": ("91 - 120", "91-120"), "b4": ("أكثر من 120", "اكثر من 120", "120+", "> 120"),
     "guarantee": ("ضمان",), "account": ("رقم الحساب", "الحساب"), "credit": ("فترة الائتمان", "الائتمان", "مدة"),
-    "currency": ("العملة",),
+    "currency": ("العملة",), "month": ("الشهر",),
 }
 
 
@@ -1049,11 +1050,9 @@ class DataPage(QWidget):
         info(self, msg)
 
     def import_aging(self, table):
+        """Aging for one month, or for several months in one sheet (a «الشهر» column). A month that already has
+        an aging can be replaced, or the file added to it (a second type: عهدة + آجل)."""
         title = "أعمار العملاء" if table == "customers" else "أعمار الموردين"
-        dlg = MonthDialog(self, f"{title} لأي شهر؟", self.win.current_period() or self._default_month())
-        if dlg.exec() != QDialog.Accepted:
-            return
-        period = dlg.period()
         start = QSettings().value("last_dir", os.path.expanduser("~"))
         path, _ = QFileDialog.getOpenFileName(self, f"ملف {title}", start, "Excel / CSV (*.xlsx *.xlsm *.csv *.txt)")
         if not path:
@@ -1063,9 +1062,11 @@ class DataPage(QWidget):
             return
         roles = AGING_ROLES[table]
         first, mapping = guess_aging(rows, roles)
-        help_text = ("حدد عمود كل بيان. المتأخر يُحسب تلقائيًا: العهدة أكثر من 30 يوم، وغيرها أكثر من 60 يوم."
+        help_text = ("حدد عمود كل بيان. المتأخر يُحسب تلقائيًا: العهدة أكثر من 30 يوم، وغيرها أكثر من 60 يوم. "
+                     "لو الشيت فيه عدة شهور حدد عمود «الشهر» (2026-03 أو 03/2026 أو مارس 2026)."
                      if table == "customers" else
-                     "حدد عمود كل بيان. المتجاوز يُحسب من فترة الائتمان، ويُحوّل بسعر الصرف من الإعدادات.")
+                     "حدد عمود كل بيان. المتجاوز يُحسب من فترة الائتمان، ويُحوّل بسعر الصرف من الإعدادات. "
+                     "لو الشيت فيه عدة شهور حدد عمود «الشهر».")
         cm = ColumnMapDialog(self, rows, roles, first, mapping, help_text)
         if cm.exec() != QDialog.Accepted:
             return
@@ -1073,14 +1074,79 @@ class DataPage(QWidget):
         if "no" not in m and "aname" not in m:
             error(self, "لازم تحدد عمود الرقم أو الاسم.")
             return
+        out = self._aging_rows(rows[cm.first_row():], m)
+        # the type of the whole file, when it has no type column (one file per type: آجل / عهدة)
+        if table == "customers" and "ctype" not in m:
+            kind, ok = QInputDialog.getItem(self, "نوع العملاء في الملف",
+                                            "الملف ما فيه عمود النوع. نوع العملاء في هذا الملف:",
+                                            ["آجل", "عهدة (نقدي معلّق)", "بدون نوع"], 0, False)
+            if not ok:
+                return
+            if kind != "بدون نوع":
+                for r in out:
+                    r["ctype"] = "عهدة" if kind.startswith("عهدة") else "آجل"
+        if "month" in m:
+            by, bad = aging.split_by_month(out)
+            if not by:
+                error(self, "ما قدرت أقرأ أي شهر من عمود الشهر.")
+                return
+            if bad:
+                QMessageBox.warning(self, "تنبيه", f"{bad} سطر بدون شهر مقروء — لن يُرفع.")
+        else:
+            dlg = MonthDialog(self, f"{title} لأي شهر؟", self.win.current_period() or self._default_month())
+            if dlg.exec() != QDialog.Accepted:
+                return
+            by = {dlg.period(): out}
+        have = [p for p in by if p in self.win.db.aging_periods(table)]
+        mode = "replace"
+        if have:
+            box = QMessageBox(self)
+            box.setWindowTitle("تأكيد")
+            box.setText(f"يوجد {title} محفوظة لـ: {'، '.join(calc.month_label(p) for p in sorted(have))}.\n\n"
+                        "«استبدال» يمسح الموجود ويحط الملف.\n"
+                        "«إضافة للموجود» يضيف الملف على الموجود (مثلًا ملف العهدة بعد ملف الآجل)، "
+                        "والعميل اللي له نفس الرقم والنوع يتحدث.")
+            rep = box.addButton("استبدال", QMessageBox.AcceptRole)
+            add = box.addButton("إضافة للموجود", QMessageBox.AcceptRole)
+            box.addButton("إلغاء", QMessageBox.RejectRole)
+            box.exec()
+            if box.clickedButton() not in (rep, add):
+                return
+            mode = "add" if box.clickedButton() is add else "replace"
+        msgs = []
+        for period in sorted(by):
+            new = by[period]
+            if mode == "add" and period in have:
+                new = aging.merge_aging(self.win.db.aging(table, period), new)
+            self.win.db.save_aging(table, period, new)
+            if table == "customers":
+                s_ = aging.customers_summary(new)
+                msgs.append(f"{calc.month_label(period)}: {s_['count']} عميل، الرصيد {s_['total']:,.0f}، "
+                            f"المتأخر {s_['overdue']:,.0f} ({s_['need_count']} عميل مطلوب منهم مطابقة).")
+            else:
+                s_ = aging.suppliers_summary(new, aging.rates(self.win.db), self.win.ctx.base_currency)
+                msgs.append(f"{calc.month_label(period)}: {s_['count']} مورد، الإجمالي {s_['total']:,.0f}، "
+                            f"المتجاوز لفترة الائتمان {s_['overdue']:,.0f}.")
+                if s_["no_rate"]:
+                    msgs.append(f"⚠ {s_['no_rate']} مورد بعملة بدون سعر صرف — أضف السعر في الإعدادات.")
+        msg = f"تم حفظ {title}:\n" + "\n".join(msgs)
+        self.log.appendPlainText(msg)
+        self.win.data_changed()
+        info(self, msg)
+
+    @staticmethod
+    def _aging_rows(rows, m):
+        """Table rows → aging dicts (numbers for the buckets, text for the rest), totals rows left out."""
         out = []
-        for r in rows[cm.first_row():]:
+        for r in rows:
             rec = {}
             for role, col in m.items():
                 v = r[col] if col < len(r) else None
                 key = "name" if role == "aname" else role
                 if role in ("b0", "b1", "b2", "b3", "b4", "guarantee", "credit"):
                     rec[key] = importer.to_number(v) or 0.0
+                elif role == "month":
+                    rec[key] = v
                 else:
                     if isinstance(v, float) and v.is_integer():
                         v = int(v)
@@ -1093,23 +1159,7 @@ class DataPage(QWidget):
             for b in ("b0", "b1", "b2", "b3", "b4"):
                 rec.setdefault(b, 0.0)
             out.append(rec)
-        if period in self.win.db.aging_periods(table) and QMessageBox.question(
-                self, "تأكيد", f"يوجد {title} محفوظة لشهر {calc.month_label(period)}. استبدالها؟") != QMessageBox.Yes:
-            return
-        self.win.db.save_aging(table, period, out)
-        if table == "customers":
-            s_ = aging.customers_summary(out)
-            msg = (f"تم حفظ {title} لشهر {calc.month_label(period)}: {s_['count']} عميل، الرصيد {s_['total']:,.0f}، "
-                   f"المتأخر {s_['overdue']:,.0f} ({s_['need_count']} عميل مطلوب منهم مطابقة).")
-        else:
-            s_ = aging.suppliers_summary(out, aging.rates(self.win.db), self.win.ctx.base_currency)
-            msg = (f"تم حفظ {title} لشهر {calc.month_label(period)}: {s_['count']} مورد، الإجمالي {s_['total']:,.0f}، "
-                   f"المتجاوز لفترة الائتمان {s_['overdue']:,.0f}.")
-            if s_["no_rate"]:
-                msg += f"\n⚠ {s_['no_rate']} مورد بعملة بدون سعر صرف — أضف السعر في الإعدادات."
-        self.log.appendPlainText(msg)
-        self.win.data_changed()
-        info(self, msg)
+        return out
 
     def open_checklist(self):
         """Opens the inputs checklist report: what was uploaded for each month and what is missing."""

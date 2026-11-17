@@ -227,9 +227,11 @@ class Evaluation:
             data = r.items if src == "items" else r.customers
             r.net = sum(v[1] for v in data.values())
             r.cost_goods = sum(v[2] for v in data.values())
+        self.no_sales_note = None
         if not self.has_sales:
-            self.notes.append("⚠ لا يوجد ملف مبيعات بالمندوب (الأصناف أو العملاء) لهذه الشهور، فالمناديب «غير مقيّمين». "
-                              "ارفع ملف المبيعات للفترة، أو اختر فترة يغطيها ملف مرفوع.")
+            self.no_sales_note = ("⚠ لا يوجد ملف مبيعات بالمندوب (الأصناف أو العملاء) ولا فواتير لكل شهور الفترة، "
+                                  "فالمناديب «غير مقيّمين». ارفع ملف المبيعات أو الفواتير للفترة، أو اختر فترة يغطيها ملف مرفوع.")
+            self.notes.append(self.no_sales_note)
 
     def _invoice_names(self):
         """Customer name → rep codes, also from «بيانات العملاء» and the latest customers' aging up to the period
@@ -277,14 +279,43 @@ class Evaluation:
                 self.inv_unlinked[1] += x["net"] or 0.0
                 self.inv_unlinked_rows.append(x)
                 continue
+            x["_rep"] = code
             r = self.rep(code)
             t = r.inv[x["itype"] or "غير محدد"]
             t[0] += 1
             t[1] += x["net"] or 0.0
             r.inv_customers.add(D.norm_name(x["cust_name"]))
-        if self.inv_unlinked[0]:
+        self._sales_from_invoices(inv)
+        if self.inv_unlinked[0] and self.sales_kind != "invoices":
             self.notes.append(f"فواتير لم تُربط بمندوب: {self.inv_unlinked[0]} فاتورة بقيمة {self.inv_unlinked[1]:,.0f} "
                               "(اسم العميل غير موجود في ملف العملاء بالمندوب).")
+
+    def _sales_from_invoices(self, inv):
+        """No sales-by-rep file for these months, but the invoices report covers every month: the sales and cost
+        of each rep come from his linked invoices (so a single month can be evaluated)."""
+        if self.has_sales or not inv:
+            return
+        months = {x["period"] for x in inv}
+        with_cost = sum(1 for x in inv if x["cost"] is not None)
+        if not set(self.months) <= months or with_cost < 0.95 * len(inv):
+            return
+        for x in inv:
+            code = x.get("_rep")
+            if not code:
+                continue
+            r = self.rep(code)
+            r.net += x["net"] or 0.0
+            r.cost_goods += x["cost"] or 0.0
+            c = r.customers.setdefault(D.norm_name(x["cust_name"]), [x["cust_name"], 0.0, 0.0])
+            c[1] += x["net"] or 0.0
+            c[2] += x["cost"] or 0.0
+        self.has_sales, self.sales_kind = True, "invoices"
+        # the range files that don't fit the period don't matter any more
+        self.notes = [n for n in self.notes if n != self.no_sales_note and "يتعدى حدود الفترة" not in n]
+        share = safe_div(self.inv_unlinked[1], sum(x["net"] or 0.0 for x in inv))
+        self.notes.append(f"المبيعات والتكلفة من تقرير الفواتير (لا يوجد ملف مبيعات بالمندوب لهذه الشهور). "
+                          f"فواتير بدون مندوب: {self.inv_unlinked[0]} بقيمة {self.inv_unlinked[1]:,.0f} "
+                          f"({(share or 0) * 100:.1f}% من المبيعات) لا تدخل في أي مندوب.")
 
     def _load_commissions(self):
         com = self.db.commissions()

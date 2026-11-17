@@ -467,3 +467,17 @@ def test_inputs_checklist(company):
     assert n >= 1 and "2026-02" in miss
     rep = R.build("inputs", ctx, R.Params(end="2026-03"))
     assert rep.title == "قائمة تحقق المدخلات" and "✗" in str(rep.blocks[1].rows[0].values)
+
+
+def test_aging_month_column_and_merge():
+    import datetime
+    from fsapp.system import aging as A
+    assert [A.parse_month(v) for v in ("2026-03", "03/2026", "31/03/2026", "مارس 2026", datetime.date(2026, 4, 30),
+                                       "الإجمالي")] == ["2026-03"] * 4 + ["2026-04", None]
+    by, bad = A.split_by_month([{"no": "1", "month": "2026-01"}, {"no": "1", "month": "02/2026"}, {"no": "2"}])
+    assert sorted(by) == ["2026-01", "2026-02"] and bad == 1
+    old = [{"no": "1", "ctype": "آجل", "b0": 5}, {"no": "1", "ctype": "عهدة", "b0": 1}]
+    new = [{"no": "1", "ctype": "عهدة", "b0": 9}, {"no": "2", "ctype": "عهدة", "b0": 3}]
+    got = A.merge_aging(old, new)
+    assert len(got) == 3 and {(r["no"], r["ctype"], r["b0"]) for r in got} == {("1", "آجل", 5), ("1", "عهدة", 9),
+                                                                              ("2", "عهدة", 3)}

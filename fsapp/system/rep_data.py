@@ -131,9 +131,14 @@ def read_dates(values):
     dts = [d for d, k in zip(parsed, kinds) if k == "dt" and d]
     if not text_months or not dts:
         return parsed, 0
+    # a text date whose first number is over 12 proves the file writes day/month: then every real date in the
+    # column is one Excel turned around (it only converts the ones that look like month/day), even in a file
+    # of several months where both readings fall in months of the file
+    day_first = any(k == "txt" and v and re.match(r"^\s*(1[3-9]|2\d|3[01])\s*[/-]", str(v))
+                    for v, k in zip(values, kinds))
     as_is = sum(1 for d in dts if (d.year, d.month) in text_months)
     sw = sum(1 for d in dts if (swapped(d).year, swapped(d).month) in text_months)
-    if sw <= as_is:
+    if not day_first and sw <= as_is:
         return parsed, 0
     out, n = [], 0
     for d, k in zip(parsed, kinds):

@@ -72,10 +72,12 @@ def monthly_status(ctx, months):
     files = db.rep_sales_files()
     monthly = {a for _, a, b, _, _ in files if a == b}
     ranged = {m for _, a, b, _, _ in files if a != b for m in months_between(a, b)}
+    inv_months = set(db.monthly_counts("invoices"))
     rows.append(("مبيعات المناديب (الأصناف أو العملاء بالمندوب)", bool(files),
-                 {m: _cell(OK) if m in monthly else _cell(PARTIAL, "ضمن ملف فترة") if m in ranged else _cell(MISSING)
-                  for m in months},
-                 "«تقييم المناديب» ← البيانات. «ضمن ملف فترة» = الشهر داخل ملف مجمّع، فما يظهر لوحده."))
+                 {m: _cell(OK) if m in monthly else _cell(OK, "من الفواتير") if m in inv_months
+                  else _cell(PARTIAL, "ضمن ملف فترة") if m in ranged else _cell(MISSING) for m in months},
+                 "«تقييم المناديب» ← البيانات. «ضمن ملف فترة» = الشهر داخل ملف مجمّع، فما يتقيّم لوحده إلا لو "
+                 "فواتيره مرفوعة («من الفواتير»)."))
     for table, name in (("invoices", "فواتير المناديب"), ("receipts", "سندات القبض")):
         ps = set(db.monthly_counts(table))
         rows.append((name, bool(ps), {m: _cell(OK if m in ps else MISSING) for m in months},

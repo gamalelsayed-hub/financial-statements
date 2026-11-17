@@ -228,3 +228,20 @@ def test_no_sales_file_means_not_rated(db):
 def test_exact_duplicates():
     by = {"2026-10": [{"vno": "1", "amount": 5.0}, {"vno": "1", "amount": 5.0}, {"vno": "2", "amount": 5.0}]}
     assert D.exact_duplicates(by) == [({"amount": "5.0", "vno": "1"}, 2)]
+
+
+def test_read_dates_file_of_several_months():
+    # text dates of January and March (day/month); Excel turned 05/03/2026 into 3 May and 02/01/2026 into 1 February
+    vals = ["15/01/2026", datetime.datetime(2026, 5, 3), "20/03/2026", datetime.datetime(2026, 2, 1), "28/05/2026"]
+    dates, n = D.read_dates(vals)
+    assert n == 2 and dates[1] == datetime.date(2026, 3, 5) and dates[3] == datetime.date(2026, 1, 2)
+
+
+def test_month_without_sales_file_uses_invoices(db):
+    db.save_invoices({"2026-03": [
+        {"inv_no": "2611301009", "itype": "آجل", "cust_name": "شركة الأولى", "net": 120000.0, "cost": 90000.0},
+        {"inv_no": "2611302009", "itype": "نقد", "cust_name": "مؤسسة الثانية", "net": 30000.0, "cost": 20000.0}]})
+    ev = RP.evaluate(db, ["2026-03"])
+    assert ev.sales_kind == "invoices" and ev.reps["1001"].net == 120000 and ev.reps["1002"].gp == 10000
+    assert ev.reps["1001"].score is not None
+    assert any("من تقرير الفواتير" in n for n in ev.notes)
