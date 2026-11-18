@@ -309,3 +309,12 @@ def test_old_file_with_text_total_column(tmp_path):
     db.save_invoices({"2026-07": [{"inv_no": "1", "itype": "آجل", "cust_name": "x", "net": 100.0, "total": 115.0}]})
     x = db.invoices(["2026-07"])[0]
     assert x["total"] == 115.0 and isinstance(x["total"], float)
+
+
+def test_outside_reps_sales_noted(db):
+    reps = db.reps()
+    reps["1002"]["active"] = 0
+    db.save_reps(list(reps.values()))
+    ev = RP.evaluate(db, ["2026-01", "2026-02"])
+    assert "1002" not in {r.code for r in ev.evaluated()}
+    assert any("مبيعات خارج التقييم" in n and ev.reps["1002"].name in n for n in ev.notes)

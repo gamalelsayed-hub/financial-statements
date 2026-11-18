@@ -167,6 +167,16 @@ class Evaluation:
         self._load_collections()
         self._costs()
         self._score()
+        self._outside_note()
+
+    def _outside_note(self):
+        """Sales of reps left out of the evaluation («يدخل التقييم» = لا), so the totals reconcile with the company."""
+        out = [r for r in self.reps.values() if not r.active and abs(r.net) >= 1]
+        if out:
+            total = sum(r.net for r in out)
+            names = "، ".join(f"{r.name} {r.net:,.0f}" for r in sorted(out, key=lambda r: -r.net))
+            self.notes.append(f"مبيعات خارج التقييم (مناديب «يدخل التقييم = لا»): {total:,.0f} — {names}. "
+                              "مش داخلة في صافي المبيعات ولا متوسطات الشركة.")
 
     # ---------------- helpers
     def rep(self, code, name=""):
