@@ -60,6 +60,9 @@ def pick_blocks(rows, months):
     return [r for r in rows if (r["p_from"], r["p_to"]) in keep], sorted(covered), outside
 
 
+CS = "عميل مورد"        # customer-supplier: rep or class in the aging / customers list
+
+
 class RepRow:
     """Everything about one rep for the period."""
 
@@ -456,7 +459,14 @@ class Evaluation:
         opening = self._aging_map(month_add(self.first, -1))
         aging_owner = {no: self.rep_key(r.get("rep")) for no, r in end.items()}
         aging_owner.update({no: self.rep_key(r.get("rep")) for no, r in opening.items() if no not in aging_owner})
-        self.master_owner = {k: self.rep_key(v.get("rep")) for k, v in self.db.customer_master().items() if v.get("rep")}
+        master = self.db.customer_master()
+        self.master_owner = {k: self.rep_key(v.get("rep")) for k, v in master.items() if v.get("rep")}
+        # customer-suppliers («عميل مورد» as the rep or the class): settled by offset with their purchases, so
+        # their receipts and balances are nobody's collection
+        cs = lambda rec: any(CS in str(rec.get(k) or "") for k in ("rep", "cls", "ctype"))  # noqa: E731
+        self.cs_customers = {no for d in (end, opening) for no, r in d.items() if cs(r)} | \
+            {no for no, r in master.items() if cs(r)}
+        self.cs_paid = [0, 0.0]
         rec = self.db.receipts(self.months)
         self.has_receipts = bool(rec)
         self.excluded = defaultdict(lambda: [0, 0.0])     # account → [count, amount] (not customer collections)
@@ -470,6 +480,10 @@ class Evaluation:
                 e[1] += x["amount"] or 0.0
                 continue
             self.cust_paid[cust] += x["amount"] or 0.0
+            if cust in self.cs_customers:
+                self.cs_paid[0] += 1
+                self.cs_paid[1] += x["amount"] or 0.0
+                continue
             code = self._owner(cust, aging_owner)
             if code:
                 self.rep(code).collected += x["amount"] or 0.0
@@ -478,7 +492,7 @@ class Evaluation:
         self.collected_total = sum(self.cust_paid.values())
         if self.has_closing:
             for no, a in end.items():
-                code = aging_owner.get(no) or self._owner(no, {})
+                code = "" if no in self.cs_customers else aging_owner.get(no) or self._owner(no, {})
                 if not code:
                     continue
                 r = self.rep(code)
@@ -489,11 +503,15 @@ class Evaluation:
                     r.closing, r.overdue = 0.0, 0.0
         if self.has_opening:
             for no, a in opening.items():
-                code = aging_owner.get(no) or self._owner(no, {})
+                code = "" if no in self.cs_customers else aging_owner.get(no) or self._owner(no, {})
                 if code:
                     r = self.rep(code)
                     r.opening = (r.opening or 0.0) + AG.customer_total(a)
         self.end_aging, self.open_aging = end, opening
+        if self.cs_customers:
+            bal = sum(AG.customer_total(a) for no, a in end.items() if no in self.cs_customers)
+            self.notes.append(f"عملاء موردين ({len(self.cs_customers)} عميل): سنداتهم ({self.cs_paid[1]:,.0f}) وأرصدتهم "
+                              f"({bal:,.0f} آخر الفترة) خارج تحصيل المناديب لأنهم يتسوّوا بالمقاصة مع مشترياتنا منهم.")
         rec_months = set(self.db.monthly_counts("receipts")) & set(self.months)
         self.receipts_partial = bool(rec_months) and len(rec_months) < self.n
         if self.receipts_partial:
@@ -594,7 +612,7 @@ class Evaluation:
         out = {"count": len(rec), "total": sum(x["amount"] or 0.0 for x in rec),
                "customers": self.collected_total, "linked": sum(r.collected for r in self.reps.values()),
                "unlinked": sum(x["amount"] or 0.0 for x in self.unlinked),
-               "excluded": sum(v[1] for v in self.excluded.values())}
+               "excluded": sum(v[1] for v in self.excluded.values()), "cs": self.cs_paid[1]}
         seen, dups = defaultdict(int), []
         for x in rec:
             if not (str(x["acct"] or "").startswith(self.prefix) and x["analytic"]):
@@ -893,6 +911,7 @@ def _collection_check_blocks(ev):
     rows = [Row("كل سندات القبض في الملف", [c["count"], c["total"]]),
             Row("تحصيل عملاء (حساب يبدأ بـ " + ev.prefix + " وله رقم عميل)", [None, c["customers"]]),
             Row("   منه على المناديب", [None, c["linked"]]), Row("   منه عملاء بدون مندوب", [None, c["unlinked"]]),
+            Row("   منه عملاء موردين (خارج المناديب)", [None, c["cs"]]),
             Row("سندات ليست تحصيل عملاء (تحويلات، توريد صناديق ...)", [None, c["excluded"]]),
             Row("الفرق (المفروض صفر)", [None, c["total"] - c["customers"] - c["excluded"]], "tot")]
     blocks.append(Table(["توزيع سندات القبض", "العدد", "المبلغ"], rows, ["d", "n"], title="من أين جاء رقم التحصيل"))

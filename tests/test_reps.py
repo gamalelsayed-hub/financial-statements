@@ -280,3 +280,16 @@ def test_collection_check_split_and_duplicates(db):
     assert c["total"] == 10900 and c["customers"] == 10000 and c["excluded"] == 900 and len(c["dups"]) == 1
     assert c["tb"] is None
     assert any(getattr(b, "title", "") == "من أين جاء رقم التحصيل" for b in RP.rpt_collections(ev).blocks)
+
+
+def test_customer_supplier_out_of_rep_collection(db):
+    v = {"vno": "7", "date": "2026-02-03", "vtype": "نقداً", "box": "صندوق", "acct": "1140101", "acct_name": "شركة الأولى",
+         "analytic": "C1", "amount": 5000.0}
+    db.save_receipts({"2026-02": [v, dict(v, vno="9", analytic="C2", amount=700.0)]})
+    db.save_aging("customers", "2026-02", [
+        {"no": "C1", "name": "شركة الأولى", "rep": "عميل مورد", "ctype": "اجل", "b0": 9000.0},
+        {"no": "C2", "name": "مؤسسة الثانية", "rep": "1002-مندوب ثاني", "ctype": "اجل", "b0": 300.0}])
+    ev = RP.evaluate(db, ["2026-02"])
+    assert ev.cs_customers == {"C1"} and ev.cs_paid == [1, 5000.0]
+    assert ev.reps["1001"].collected == 0 and ev.reps["1002"].collected == 700 and ev.reps["1002"].closing == 300
+    assert ev.collection_check()["cs"] == 5000 and any("عملاء موردين" in n for n in ev.notes)
