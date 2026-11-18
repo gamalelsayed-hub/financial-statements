@@ -269,3 +269,14 @@ def test_returns_from_report_taken_off_invoice_sales(db):
     assert r.ret == [1, 12000.0] and r.net == 108000 and r.gross == 120000 and r.gp == 108000 - 81000
     assert abs(r.ret_rate - 0.1) < 1e-9 and "شركة الأولى" in RP.rpt_returns(ev).blocks[1].rows[0].label
     assert any(c.label == "المردودات" for c in RP.rpt_summary(ev).blocks[0].rows)
+
+
+def test_collection_check_split_and_duplicates(db):
+    v = {"vno": "7", "date": "2026-02-03", "vtype": "نقداً", "box": "صندوق", "acct": "1140101", "acct_name": "شركة الأولى",
+         "analytic": "C1", "amount": 5000.0}
+    db.save_receipts({"2026-02": [v, dict(v), dict(v, vno="8", acct="1110102", analytic="", amount=900.0)]})
+    ev = RP.evaluate(db, ["2026-02"])
+    c = ev.collection_check()
+    assert c["total"] == 10900 and c["customers"] == 10000 and c["excluded"] == 900 and len(c["dups"]) == 1
+    assert c["tb"] is None
+    assert any(getattr(b, "title", "") == "من أين جاء رقم التحصيل" for b in RP.rpt_collections(ev).blocks)

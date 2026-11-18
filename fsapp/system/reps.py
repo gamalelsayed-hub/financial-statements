@@ -13,7 +13,7 @@ from collections import defaultdict
 from . import aging as AG
 from . import rep_data as D
 from .blocks import Para, Report, Row, Table
-from .calc import month_add, range_label, safe_div
+from .calc import month_add, month_label as calc_label, range_label, safe_div
 
 GRADES = [(85, "ممتاز"), (70, "جيد جداً"), (55, "جيد"), (40, "مقبول"), (0, "ضعيف")]
 CRITERIA = [("sales", "تارجت المبيعات", "rep_w_sales"), ("profit", "تارجت الربح", "rep_w_profit"),
@@ -580,6 +580,58 @@ class Evaluation:
         total = sum(w for _, _, w in used) or 1
         return [(k, label, w / total) for k, label, w in used]
 
+    # ---------------- is the collection read right?
+    RECEIVABLES = "العملاء وعهد المبيعات"
+    VAT = 0.15
+
+    def collection_check(self):
+        """Checks of the collection figure for the period:
+        - the receipts file split into customer collections + not customers (nothing lost or counted twice),
+        - exact duplicate vouchers, and the collection of each month,
+        - against the trial balance: the customers' and sales custody accounts change by the credit sales (with VAT)
+          − returns − collections, so the collection the trial balance implies is set beside the one read."""
+        rec = self.db.receipts(self.months)
+        out = {"count": len(rec), "total": sum(x["amount"] or 0.0 for x in rec),
+               "customers": self.collected_total, "linked": sum(r.collected for r in self.reps.values()),
+               "unlinked": sum(x["amount"] or 0.0 for x in self.unlinked),
+               "excluded": sum(v[1] for v in self.excluded.values())}
+        seen, dups = defaultdict(int), []
+        for x in rec:
+            if not (str(x["acct"] or "").startswith(self.prefix) and x["analytic"]):
+                continue            # only a duplicate customer receipt changes the collection
+            k = (x["vno"], x["date"], x["box"], x["acct"], x["analytic"], round(x["amount"] or 0.0, 2))
+            seen[k] += 1
+            if seen[k] == 2:
+                dups.append(x)
+        out["dups"] = dups
+        months = defaultdict(lambda: [0, 0.0])
+        for x in rec:
+            if str(x["acct"] or "").startswith(self.prefix) and x["analytic"]:
+                months[x["period"]][0] += 1
+                months[x["period"]][1] += x["amount"] or 0.0
+        out["months"] = dict(months)
+        out["tb"] = self._tb_check()
+        return out
+
+    def _tb_check(self):
+        first = self.db.tb(self.first)
+        last = self.db.tb(self.last)
+        inv_months = set(self.db.monthly_counts("invoices"))
+        if not first or not last or not set(self.months) <= inv_months:
+            return None
+        codes = [c for c, a in self.db.accounts().items() if a.fs_item == self.RECEIVABLES]
+        opening = sum(first[c][1] - first[c][2] for c in codes if c in first)
+        closing = sum(last[c][5] - last[c][6] for c in codes if c in last)
+
+        def with_vat(x):
+            return x["total"] if x.get("total") is not None else (x["net"] or 0.0) * (1 + self.VAT)
+        credit = lambda x: "نقد" not in (x["itype"] or "")  # noqa: E731
+        sales = sum(with_vat(x) for x in self.db.invoices(self.months) if credit(x))
+        returns = sum(abs(with_vat(x)) for x in self.db.returns(self.months) if credit(x))
+        implied = sales - returns - (closing - opening)
+        return {"accounts": len(codes), "opening": opening, "closing": closing, "sales": sales, "returns": returns,
+                "implied": implied, "read": self.collected_total, "diff": self.collected_total - implied}
+
     # ---------------- customers' balance check
     def reconciliation(self):
         """Per customer: opening + credit invoices − receipts against the closing balance (needs both agings).
@@ -815,8 +867,49 @@ def rpt_returns(ev):
     return Report("rep_returns", "مردودات المبيعات", _sub(ev), blocks + _notes(ev))
 
 
-def rpt_collections(ev):
+def _collection_check_blocks(ev):
+    c = ev.collection_check()
     blocks = []
+    tb = c["tb"]
+    if tb:
+        ok = abs(tb["diff"]) <= max(0.01 * abs(tb["read"]), 1000)
+        rows = [Row("رصيد العملاء وعهد المبيعات في الميزان أول الفترة", [tb["opening"]]),
+                Row("+ مبيعات آجلة ومن حساب من الفواتير (شامل الضريبة)", [tb["sales"]]),
+                Row("− مردودات آجلة (شامل الضريبة)", [-tb["returns"]]),
+                Row("− رصيد العملاء وعهد المبيعات في الميزان آخر الفترة", [-tb["closing"]]),
+                Row("= التحصيل حسب الميزان", [tb["implied"]], "tot"),
+                Row("التحصيل المقروء من سندات القبض", [tb["read"]], "tot"),
+                Row("الفرق", [tb["diff"]], "tot", styles=["good" if ok else "bad"])]
+        blocks.append(Table(["تشييك التحصيل مع الميزان", "المبلغ"], rows, title="هل التحصيل مقروء صح؟"))
+        blocks.append(Para(("✓ التحصيل المقروء مطابق للميزان تقريبًا (الفرق أقل من 1%)." if ok else
+                            "⚠ فيه فرق بين التحصيل والميزان. أسبابه المحتملة: سندات ناقصة أو مكررة في ملف السندات، "
+                            "فواتير شهر ناقصة، مردودات مش مرفوعة، أو قيود يدوية على حسابات العملاء (خصم، تسوية، "
+                            "شيكات مرتدة). راجع الجداول اللي تحت.")
+                           + f" الحسابات: كل حساب خانته في القوائم «{ev.RECEIVABLES}» ({tb['accounts']} حساب). "
+                           "الفواتير اللي ما فيها المبلغ بالضريبة تُحسب × 1.15. المبيعات النقدية مش داخلة لأنها ما تمر "
+                           "على حساب العميل.", "good" if ok else "warn"))
+    else:
+        blocks.append(Para("تشييك التحصيل مع الميزان يحتاج: ميزان أول شهر وآخر شهر في الفترة، وفواتير كل شهورها.", "warn"))
+    rows = [Row("كل سندات القبض في الملف", [c["count"], c["total"]]),
+            Row("تحصيل عملاء (حساب يبدأ بـ " + ev.prefix + " وله رقم عميل)", [None, c["customers"]]),
+            Row("   منه على المناديب", [None, c["linked"]]), Row("   منه عملاء بدون مندوب", [None, c["unlinked"]]),
+            Row("سندات ليست تحصيل عملاء (تحويلات، توريد صناديق ...)", [None, c["excluded"]]),
+            Row("الفرق (المفروض صفر)", [None, c["total"] - c["customers"] - c["excluded"]], "tot")]
+    blocks.append(Table(["توزيع سندات القبض", "العدد", "المبلغ"], rows, ["d", "n"], title="من أين جاء رقم التحصيل"))
+    if len(c["months"]) > 1:
+        rows = [Row(calc_label(p), [v[0], v[1]]) for p, v in sorted(c["months"].items())]
+        blocks.append(Table(["الشهر", "عدد السندات", "التحصيل"], rows, ["d", "n"],
+                            title="التحصيل لكل شهر (شهر قليل جدًا = سندات ناقصة)"))
+    if c["dups"]:
+        rows = [Row(f"{x['vno']}", [x["date"], x["box"], f"{x['analytic']} {x['acct_name']}", x["amount"]])
+                for x in c["dups"][:30]]
+        blocks.append(Table(["رقم السند", "التاريخ", "الصندوق / البنك", "العميل", "المبلغ"], rows, ["t", "t", "t", "n"],
+                            title=f"سندات تحصيل عملاء مكررة بالضبط ({len(c['dups'])}) — راجعها في النظام"))
+    return blocks
+
+
+def rpt_collections(ev):
+    blocks = _collection_check_blocks(ev) if ev.has_receipts else []
     rows = []
     for r in ev.ordered():
         rows.append(Row(f"{r.code} {r.name}", [r.opening, r.collected, r.closing, r.overdue, r.overdue_share, r.coll_rate]))
