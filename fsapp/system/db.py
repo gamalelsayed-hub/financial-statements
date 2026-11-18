@@ -57,8 +57,12 @@ CREATE TABLE IF NOT EXISTS rep_sales(
     PRIMARY KEY(kind, p_from, p_to, rep, key));
 CREATE TABLE IF NOT EXISTS invoices(
     id INTEGER PRIMARY KEY, period TEXT, inv_no TEXT, itype TEXT, date TEXT, acct TEXT, cust_name TEXT,
-    net REAL, cost REAL, rep TEXT, cust_no TEXT);
+    net REAL, cost REAL, rep TEXT, cust_no TEXT, total REAL);
 CREATE INDEX IF NOT EXISTS invoices_period ON invoices(period);
+CREATE TABLE IF NOT EXISTS sales_returns(
+    id INTEGER PRIMARY KEY, period TEXT, inv_no TEXT, itype TEXT, date TEXT, acct TEXT, cust_name TEXT,
+    net REAL, cost REAL, rep TEXT, cust_no TEXT, total REAL, ref TEXT);
+CREATE INDEX IF NOT EXISTS sales_returns_period ON sales_returns(period);
 CREATE TABLE IF NOT EXISTS receipts(
     id INTEGER PRIMARY KEY, period TEXT, vno TEXT, date TEXT, vtype TEXT, box TEXT, acct TEXT, acct_name TEXT,
     analytic TEXT, amount REAL);
@@ -73,7 +77,8 @@ ITEM_FIELDS = ["code", "name", "unit", "grp_main", "grp_sub1", "grp_sub2", "main
 SALES_FIELDS = ["cust_code", "cust_name", "item_code", "item_name", "unit", "qty", "free_qty", "sales", "ret_qty",
                 "returns", "net_qty", "net", "cnet", "cost"]
 REP_FIELDS = ["code", "name", "nationality", "salary", "target", "other", "active", "note"]
-INVOICE_FIELDS = ["inv_no", "itype", "date", "acct", "cust_name", "net", "cost", "rep", "cust_no"]
+INVOICE_FIELDS = ["inv_no", "itype", "date", "acct", "cust_name", "net", "cost", "rep", "cust_no", "total"]
+RETURN_FIELDS = INVOICE_FIELDS + ["ref"]
 RECEIPT_FIELDS = ["vno", "date", "vtype", "box", "acct", "acct_name", "analytic", "amount"]
 PURCHASE_FIELDS = ["supp_no", "supp_name", "currency", "item_code", "item_name", "unit", "qty", "net"]
 
@@ -106,7 +111,7 @@ class CompanyDB:
         self.path = path
         self.con = sqlite3.connect(path)
         self.con.executescript(SCHEMA)
-        self._add_columns("invoices", ("rep", "cust_no"))
+        self._add_columns("invoices", ("rep", "cust_no", "total"))
         if not self.con.execute("SELECT 1 FROM settings LIMIT 1").fetchone():
             self._seed()
         self._drop_total_rows()
@@ -479,6 +484,13 @@ class CompanyDB:
     def invoices(self, periods):
         return self._monthly("invoices", INVOICE_FIELDS, periods)
 
+    def save_returns(self, by_period):
+        """Sales returns {month: [return dicts]} (amounts positive). Replaces each month in the file."""
+        self._save_monthly("sales_returns", RETURN_FIELDS, by_period)
+
+    def returns(self, periods):
+        return self._monthly("sales_returns", RETURN_FIELDS, periods)
+
     def save_receipts(self, by_period):
         self._save_monthly("receipts", RECEIPT_FIELDS, by_period)
 
@@ -487,7 +499,7 @@ class CompanyDB:
 
     def monthly_counts(self, table):
         """{period: (rows, amount)} for invoices / receipts."""
-        col = "net" if table == "invoices" else "amount"
+        col = "amount" if table == "receipts" else "net"
         return {p: (n, a) for p, n, a in self.con.execute(
             f"SELECT period, COUNT(*), SUM({col}) FROM {table} GROUP BY period")}
 

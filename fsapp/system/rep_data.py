@@ -207,15 +207,37 @@ def merge_into(by, period):
 
 
 # ------------------------------------------------------------------ invoices
-def parse_invoices(rows, fallback=None):
+RETURN_NO = ("رقم المرتجع", "رقم المردود", "رقم الإشعار", "رقم اشعار", "رقم الفاتورة", "رقم السند")
+
+
+def parse_returns(rows, fallback=None):
+    """Sales returns report (same columns as the invoices report, the number may be «رقم المرتجع») →
+    ({month: [return]}, info). Amounts are kept positive; «ref» is the original invoice when the report has it."""
+    h = next((i for i, r in enumerate(rows[:30]) if any(w in " | ".join(text(x) for x in r) for w in RETURN_NO)
+              and any(w in " | ".join(text(x) for x in r) for w in ("صافي", "مبلغ", "القيمة"))), None)
+    if h is None:
+        raise ValueError("ما لقيت صف العناوين (رقم المرتجع أو الفاتورة … المبلغ).")
+    by, info = parse_invoices(rows, fallback, header=h, number=RETURN_NO)
+    for v in by.values():
+        for x in v:
+            for k in ("net", "cost", "total"):
+                if x.get(k) is not None:
+                    x[k] = abs(x[k])
+    return by, info
+
+
+def parse_invoices(rows, fallback=None, header=None, number=("رقم الفاتورة",)):
     """Invoices report → ({month: [invoice]}, info)."""
-    h = find_header(rows, ["رقم الفاتورة", "صافي"])
+    h = find_header(rows, ["رقم الفاتورة", "صافي"]) if header is None else header
     if h is None:
         raise ValueError("ما لقيت صف العناوين (رقم الفاتورة … صافي الفاتورة).")
     hd = rows[h]
-    c = {"inv_no": col_of(hd, "رقم الفاتورة"), "itype": col_of(hd, "نوع الفاتورة", "النوع"),
+    no_col = col_of(hd, *number)
+    ref_col = col_of(hd, "الفاتورة الأصلية", "رقم الفاتورة", exclude=("نوع",))
+    c = {"inv_no": no_col, "ref": ref_col if ref_col != no_col else None,
+         "itype": col_of(hd, "نوع الفاتورة", "نوع المرتجع", "النوع"),
          "date": col_of(hd, "تاريخ"), "acct": col_of(hd, "رقم الحساب"), "cust_name": col_of(hd, "اسم الحساب", "اسم العميل"),
-         "net": col_of(hd, "صافي"), "cost": col_of(hd, "التكلفة", exclude=("نسبة",)),
+         "net": col_of(hd, "صافي", "القيمة", "المبلغ"), "cost": col_of(hd, "التكلفة", exclude=("نسبة",)),
          "amount": col_of(hd, "مبلغ الفاتورة"), "discount": col_of(hd, "الخصم"),
          "rep": col_of(hd, "اسم المندوب", "المندوب"), "cust_no": col_of(hd, "رقم العميل")}
     # a report with «مبلغ الفاتورة» and «الخصم»: its «صافي» includes the VAT, so the sale is amount − discount
@@ -230,9 +252,14 @@ def parse_invoices(rows, fallback=None):
             no = f"{no:.0f}"
         net = ((to_number(g("amount")) or 0.0) - (to_number(g("discount")) or 0.0)) if ex_vat else \
             (to_number(g("net")) or 0.0)
+        ref = g("ref")
+        if isinstance(ref, float):
+            ref = f"{ref:.0f}"
         recs.append({"inv_no": text(no), "itype": text(g("itype")), "acct": text(g("acct")),
                      "cust_name": text(g("cust_name")), "net": net, "cost": to_number(g("cost")),
-                     "rep": text(g("rep")), "cust_no": text(g("cust_no"))})
+                     "rep": text(g("rep")), "cust_no": text(g("cust_no")),
+                     # with VAT (the customer's balance): «صافي» of a report that has «مبلغ الفاتورة» and «الخصم»
+                     "total": to_number(g("net")) if ex_vat else None, "ref": text(ref)})
     dates, fixed = read_dates([r[c["date"]] if c["date"] is not None else None for r in body])
     by, no_date = _by_month(recs, dates, fallback)
     return by, {"rows": len(recs), "fixed_dates": fixed, "no_date": no_date, "page_dups": dropped,

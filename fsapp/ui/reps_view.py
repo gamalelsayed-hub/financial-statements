@@ -153,13 +153,20 @@ class RepCard(QFrame):
                  ("عدد العملاء", f"{r.customer_count:,}" if r.customer_count else "—"),
                  ("عدد الفواتير", f"{r.inv_count:,}" if r.inv_count else "—"),
                  ("متوسط الفاتورة", _num(r.avg_invoice))]
+        if r.ret[0]:
+            company = ev.company_ret_rate
+            high = r.ret_rate and company and r.ret_rate > 1.5 * company
+            lines.append(("المردودات (نسبة المرتجع)", f"{_num(r.ret[1])} ({_num(r.ret_rate, '%')})" + (" ⚠" if high else "")))
+            top_c = max(r.ret_customers.values(), key=lambda v: v[2])
+            lines.append(("أكثر عميل مردودات", f"{top_c[0]} ({_num(top_c[2])})"))
         top_item = max(r.items.items(), key=lambda kv: kv[1][1] - kv[1][2])[1][0] if r.items else ""
         if top_item:
             lines.append(("أكثر صنف ربحًا", top_item))
         for label, value in lines:
             a, b = QLabel(label), QLabel(value)
             a.setStyleSheet(f"color:#475467; font-size:{pt(9)};")
-            b.setStyleSheet(f"color:{'#b42318' if value.startswith('-') else '#101828'}; font-weight:700; font-size:{pt(9)};")
+            bad = value.startswith('-') or value.endswith('⚠')
+            b.setStyleSheet(f"color:{'#b42318' if bad else '#101828'}; font-weight:700; font-size:{pt(9)};")
             b.setWordWrap(True)
             grid.addWidget(a, row, 0)
             grid.addWidget(b, row, 1, 1, 2)
@@ -284,6 +291,7 @@ class DataTab(QWidget):
         lay.addWidget(note)
         bar = QHBoxLayout()
         for text, fn in (("📥 الأصناف أو العملاء بالمندوب", self.import_sales), ("📥 تقرير الفواتير", self.import_invoices),
+                         ("📥 تقرير المردودات", self.import_returns),
                          ("📥 سندات القبض", self.import_receipts), ("📥 بيانات المناديب (Excel)", self.import_reps),
                          ("📥 العمولات الشهرية (Excel)", self.import_commissions)):
             bar.addWidget(_btn(text, fn))
@@ -337,7 +345,7 @@ class DataTab(QWidget):
     def load(self):
         db = self.win.db
         files = [(KIND_LABEL[k], a, b, n, s, ("sales", k, a, b)) for k, a, b, n, s in db.rep_sales_files()]
-        for table, label in (("invoices", "الفواتير"), ("receipts", "سندات القبض")):
+        for table, label in (("invoices", "الفواتير"), ("sales_returns", "المردودات"), ("receipts", "سندات القبض")):
             for p, (n, s) in sorted(db.monthly_counts(table).items()):
                 files.append((label, p, p, n, s, (table, p)))
         com = db.commissions()
@@ -464,6 +472,9 @@ class DataTab(QWidget):
 
     def import_invoices(self):
         self._monthly("تقرير الفواتير", D.parse_invoices, self.win.db.save_invoices, "الفواتير")
+
+    def import_returns(self):
+        self._monthly("تقرير مردودات المبيعات", D.parse_returns, self.win.db.save_returns, "المردودات")
 
     def import_receipts(self):
         self._monthly("سندات القبض", D.parse_receipts, self.win.db.save_receipts, "سندات القبض")
@@ -621,7 +632,7 @@ class RepsPage(QWidget):
         self.inv = ReportView()
         self.data = DataTab(self)
         for w, t in ((self.board, "🏆 لوحة المناديب"), (self.summary, "📋 الترتيب"), (rep_box, "📄 تقرير المندوب"),
-                     (self.coll, "💰 التحصيل ومطابقة الأرصدة"), (self.inv, "🧾 الفواتير"),
+                     (self.coll, "💰 التحصيل ومطابقة الأرصدة"), (self.inv, "🧾 الفواتير والمردودات"),
                      (self.data, "⚙ البيانات والإعدادات")):
             self.tabs.addTab(w, t)
         lay.addWidget(self.tabs, 1)
@@ -739,7 +750,7 @@ class RepsPage(QWidget):
         if i == 5:
             return
         path = self._save_path("pdf", ["لوحة المناديب", "ترتيب المناديب", self.rep.currentText().split("  ")[-1],
-                                       "التحصيل", "الفواتير"][i])
+                                       "التحصيل", "الفواتير والمردودات"][i])
         if not path:
             return
         if i == 0:

@@ -255,3 +255,17 @@ def test_invoices_report_without_cost_and_with_page_breaks():
     by, info = D.parse_invoices(rows)
     assert info["page_dups"] == 1 and info["ex_vat"] and info["no_cost"]
     assert [x["net"] for x in by["2026-03"]] == [900, 500] and by["2026-03"][0]["cust_no"] == "501"
+
+
+def test_returns_from_report_taken_off_invoice_sales(db):
+    db.save_invoices({"2026-03": [
+        {"inv_no": "2611301009", "itype": "آجل", "cust_name": "شركة الأولى", "net": 120000.0, "cost": 90000.0},
+        {"inv_no": "2611302009", "itype": "نقد", "cust_name": "مؤسسة الثانية", "net": 30000.0, "cost": 20000.0}]})
+    hd = ["رقم المرتجع", "التاريخ", "نوع الفاتورة", "اسم العميل", "صافي المرتجع", "التكلفة"]
+    by, _ = D.parse_returns([hd, [9001, "15/03/2026", "آجل", "شركة الأولى", -12000, -9000]])
+    db.save_returns(by)
+    ev = RP.evaluate(db, ["2026-03"])
+    r = ev.reps["1001"]
+    assert r.ret == [1, 12000.0] and r.net == 108000 and r.gross == 120000 and r.gp == 108000 - 81000
+    assert abs(r.ret_rate - 0.1) < 1e-9 and "شركة الأولى" in RP.rpt_returns(ev).blocks[1].rows[0].label
+    assert any(c.label == "المردودات" for c in RP.rpt_summary(ev).blocks[0].rows)

@@ -78,7 +78,7 @@ def monthly_status(ctx, months):
                   else _cell(PARTIAL, "ضمن ملف فترة") if m in ranged else _cell(MISSING) for m in months},
                  "«تقييم المناديب» ← البيانات. «ضمن ملف فترة» = الشهر داخل ملف مجمّع، فما يتقيّم لوحده إلا لو "
                  "فواتيره مرفوعة («من الفواتير»)."))
-    for table, name in (("invoices", "فواتير المناديب"), ("receipts", "سندات القبض")):
+    for table, name in (("invoices", "فواتير المناديب"), ("sales_returns", "مردودات المبيعات"), ("receipts", "سندات القبض")):
         ps = set(db.monthly_counts(table))
         rows.append((name, bool(ps), {m: _cell(OK if m in ps else MISSING) for m in months},
                      "«تقييم المناديب» ← البيانات."))
