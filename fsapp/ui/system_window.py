@@ -1917,15 +1917,9 @@ class SystemWindow(QMainWindow):
             self.period.addItem(calc.month_label(p), p)
         if cur:
             self.period.setCurrentIndex(max(0, self.period.findData(cur)))
-        self.comp.clear()
-        self.comp.addItem("الفترة السابقة", "prev")
-        self.comp.addItem("نفس الفترة من السنة السابقة", "ly")
-        self.comp.addItem("بدون مقارنة", "none")
-        for p in reversed(self.ctx.periods):
-            self.comp.addItem(f"فترة تنتهي في {calc.month_label(p)}", p)
-        self.comp.setCurrentIndex(max(0, self.comp.findData(comp)) if comp else 0)
         for w in (self.period, self.comp):
             w.blockSignals(False)
+        self._fill_comp(comp)
         if reload_pages:
             for _, page in self.pages:
                 page.load()
@@ -1934,7 +1928,34 @@ class SystemWindow(QMainWindow):
             self.dashboard.load()
             self.aging_page.load()
 
+    def _fill_comp(self, keep=None):
+        """The comparison choices for the period picked: a period ending in a given month is offered only when it
+        does not overlap the period shown and all its months are uploaded; «السابقة» and «السنة السابقة» say when
+        their months are not all there."""
+        end, n = self.period.currentData(), self.nmonths.currentData() or 1
+        have = set(self.ctx.periods) if self.ctx else set()
+        self.comp.blockSignals(True)
+        self.comp.clear()
+
+        def full(e):
+            return all(m in have for m in calc.months_range(e, n))
+        for label, key, e in (("الفترة السابقة", "prev", end and calc.month_add(end, -n)),
+                              ("نفس الفترة من السنة السابقة", "ly", end and calc.month_add(end, -12))):
+            self.comp.addItem(label + ("" if e and full(e) else " (بياناتها ناقصة)"), key)
+        self.comp.addItem("بدون مقارنة", "none")
+        if end:
+            for p in reversed(self.ctx.periods):
+                if p <= calc.month_add(end, -n) and full(p):
+                    self.comp.addItem(f"فترة تنتهي في {calc.month_label(p)}", p)
+        i = self.comp.findData(keep) if keep else 0
+        self.comp.setCurrentIndex(max(0, i))
+        self.comp.setToolTip("" if i >= 0 or not keep else
+                             "الفترة المختارة للمقارنة كانت متداخلة مع الفترة المعروضة أو ناقصة، فرجعت «الفترة السابقة».")
+        self.comp.blockSignals(False)
+
     def params_changed(self):
+        if self.sender() in (self.period, self.nmonths):
+            self._fill_comp(self.comp.currentData())
         self.reports_page.show_report()
         self.dashboard.load()
         self.aging_page.load()

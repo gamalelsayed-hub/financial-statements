@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fsapp.system import migrate, render  # noqa: E402
 from fsapp.system import reports as R  # noqa: E402
-from fsapp.system.calc import Ctx  # noqa: E402
+from fsapp.system.calc import Ctx, month_add  # noqa: E402
 from fsapp.system.db import Account, CompanyDB  # noqa: E402
 
 # code, name, fs item, cf item, branch category, expense group, year opening (net), monthly movements Jan..Mar
@@ -481,3 +481,26 @@ def test_aging_month_column_and_merge():
     got = A.merge_aging(old, new)
     assert len(got) == 3 and {(r["no"], r["ctype"], r["b0"]) for r in got} == {("1", "آجل", 5), ("1", "عهدة", 9),
                                                                               ("2", "عهدة", 3)}
+
+
+def test_compare_choices_skip_overlapping_periods(company):
+    pytest.importorskip("PySide6")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QComboBox
+    from fsapp.ui.system_window import SystemWindow
+    QApplication.instance() or QApplication([])
+
+    class Win:
+        pass
+    w = Win()
+    w.ctx = Ctx(company)
+    w.period, w.nmonths, w.comp = QComboBox(), QComboBox(), QComboBox()
+    for p in w.ctx.periods:
+        w.period.addItem(p, p)
+    w.period.setCurrentIndex(w.period.findData(w.ctx.periods[-1]))
+    w.nmonths.addItem("ربع", 3)
+    end = w.ctx.periods[-1]
+    SystemWindow._fill_comp(w, end)                # the period itself overlaps: back to «السابقة»
+    data = [w.comp.itemData(i) for i in range(w.comp.count())]
+    assert w.comp.currentData() == "prev" and end not in data
+    assert all(d in ("prev", "ly", "none") or d <= month_add(end, -3) for d in data)
