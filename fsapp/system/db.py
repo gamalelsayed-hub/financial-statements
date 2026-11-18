@@ -79,6 +79,7 @@ SALES_FIELDS = ["cust_code", "cust_name", "item_code", "item_name", "unit", "qty
 REP_FIELDS = ["code", "name", "nationality", "salary", "target", "other", "active", "note"]
 INVOICE_FIELDS = ["inv_no", "itype", "date", "acct", "cust_name", "net", "cost", "rep", "cust_no", "total"]
 RETURN_FIELDS = INVOICE_FIELDS + ["ref"]
+NUMBER_FIELDS = {"net", "cost", "total", "amount"}
 RECEIPT_FIELDS = ["vno", "date", "vtype", "box", "acct", "acct_name", "analytic", "amount"]
 PURCHASE_FIELDS = ["supp_no", "supp_name", "currency", "item_code", "item_name", "unit", "qty", "net"]
 
@@ -111,7 +112,7 @@ class CompanyDB:
         self.path = path
         self.con = sqlite3.connect(path)
         self.con.executescript(SCHEMA)
-        self._add_columns("invoices", ("rep", "cust_no", "total"))
+        self._add_columns("invoices", (("rep", "TEXT"), ("cust_no", "TEXT"), ("total", "REAL")))
         if not self.con.execute("SELECT 1 FROM settings LIMIT 1").fetchone():
             self._seed()
         self._drop_total_rows()
@@ -120,9 +121,9 @@ class CompanyDB:
     def _add_columns(self, table, cols):
         """Columns added by a newer version to a table of an older company file."""
         have = {r[1] for r in self.con.execute(f"PRAGMA table_info({table})")}
-        for c in cols:
+        for c, kind in cols:
             if c not in have:
-                self.con.execute(f"ALTER TABLE {table} ADD COLUMN {c} TEXT")
+                self.con.execute(f"ALTER TABLE {table} ADD COLUMN {c} {kind}")
 
     def _drop_total_rows(self):
         """Footer rows of a system report saved as accounts by older versions (code with no digits, like
@@ -475,7 +476,17 @@ class CompanyDB:
         q = ",".join("?" * len(periods))
         cur = self.con.execute(f"SELECT period, {', '.join(fields)} FROM {table} WHERE period IN ({q}) ORDER BY id",
                                tuple(periods))
-        return [dict(zip(["period"] + fields, r)) for r in cur]
+        out = [dict(zip(["period"] + fields, r)) for r in cur]
+        # amounts are numbers even in a company file whose column was added as text by build-32
+        for x in out:
+            for k in NUMBER_FIELDS & x.keys():
+                v = x[k]
+                if isinstance(v, str):
+                    try:
+                        x[k] = float(v) if v.strip() else None
+                    except ValueError:
+                        x[k] = None
+        return out
 
     def save_invoices(self, by_period):
         """by_period: {month: [invoice dicts]}. Replaces each month in the file."""

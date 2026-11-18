@@ -293,3 +293,19 @@ def test_customer_supplier_out_of_rep_collection(db):
     assert ev.cs_customers == {"C1"} and ev.cs_paid == [1, 5000.0]
     assert ev.reps["1001"].collected == 0 and ev.reps["1002"].collected == 700 and ev.reps["1002"].closing == 300
     assert ev.collection_check()["cs"] == 5000 and any("عملاء موردين" in n for n in ev.notes)
+
+
+def test_old_file_with_text_total_column(tmp_path):
+    import sqlite3
+    path = str(tmp_path / "old.fsdb")
+    CompanyDB(path).con.close()
+    con = sqlite3.connect(path)          # a file from build-32/33: «total» added as TEXT
+    con.execute("DROP TABLE invoices")
+    con.execute("CREATE TABLE invoices(id INTEGER PRIMARY KEY, period TEXT, inv_no TEXT, itype TEXT, date TEXT, acct TEXT,"
+                " cust_name TEXT, net REAL, cost REAL, rep TEXT, cust_no TEXT, total TEXT)")
+    con.commit()
+    con.close()
+    db = CompanyDB(path)
+    db.save_invoices({"2026-07": [{"inv_no": "1", "itype": "آجل", "cust_name": "x", "net": 100.0, "total": 115.0}]})
+    x = db.invoices(["2026-07"])[0]
+    assert x["total"] == 115.0 and isinstance(x["total"], float)
