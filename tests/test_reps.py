@@ -176,6 +176,9 @@ def test_screen(db):
     from fsapp.ui.reps_view import RepsDataPage
     from fsapp.ui.system_window import ReportsPage
     app = QApplication.instance() or QApplication([])
+    if os.environ.get("REPS_PREVIEW"):
+        from PySide6.QtCore import Qt
+        app.setLayoutDirection(Qt.RightToLeft)      # as the program shows it
 
     class Win:
         def remember_place(self):
