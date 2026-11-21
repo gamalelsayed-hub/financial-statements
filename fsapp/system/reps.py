@@ -864,7 +864,7 @@ def rpt_returns(ev):
     """Returns per rep and the customers with the most returns."""
     if not ev.ret_total[0]:
         return Report("rep_returns", "مردودات المبيعات", _sub(ev),
-                      [Para("لا توجد مردودات للفترة — ارفع تقرير المردودات من صفحة «تقييم المناديب» ← «البيانات».", "warn")])
+                      [Para("لا توجد مردودات للفترة — ارفع تقرير المردودات من «الإعدادات» ← «المناديب».", "warn")])
     company = ev.company_ret_rate
     rows = []
     for r in sorted(ev.reps.values(), key=lambda r: -(r.ret_rate or 0)):
@@ -984,7 +984,7 @@ def rpt_collections(ev):
 def rpt_invoices(ev):
     types = sorted({t for r in ev.reps.values() for t in r.inv})
     if not ev.inv_total:
-        blocks = [Para("لا توجد فواتير للفترة — ارفع تقرير الفواتير من صفحة «تقييم المناديب» ← «البيانات».", "warn")]
+        blocks = [Para("لا توجد فواتير للفترة — ارفع تقرير الفواتير من «الإعدادات» ← «المناديب».", "warn")]
         if ev.ret_total[0]:
             blocks += rpt_returns(ev).blocks
         return Report("rep_invoices", "الفواتير والمردودات", _sub(ev), blocks)
@@ -1026,3 +1026,66 @@ def rpt_invoices(ev):
     ret = rpt_returns(ev)
     blocks += [b for b in ret.blocks if not (isinstance(b, Para) and b.text in ev.notes)]
     return Report("rep_invoices", "الفواتير والمردودات", _sub(ev), blocks)
+
+
+# ---------------------------------------------------------------- in the reports screen
+REP_VIEWS = [("من أول السنة حتى الشهر", "ytd"), ("الفترة المختارة (طول الفترة)", "period")]
+
+
+def ev_for(ctx, params):
+    """The evaluation for the reports screen: the year to date or the period of the top bar. Kept on the Ctx,
+    which is made again whenever the data changes, so moving between rep reports does not compute it again."""
+    months = ctx.ytd_months(params.end) if params.view == "ytd" else months_between(
+        month_add(params.end, -(params.n - 1)), params.end)
+    cache = ctx.__dict__.setdefault("_rep_evals", {})
+    key = tuple(months)
+    if key not in cache:
+        cache[key] = evaluate(ctx.db, months)
+    return cache[key]
+
+
+def rpt_board(ev):
+    """The board of the reps page as tables (export): the company figures and one row per card."""
+    t = ev.totals()
+    kpi = [Row("صافي المبيعات", [t["net"]]), Row("مجمل الربح", [t["gp"]]), Row("هامش الشركة", [t["margin"]], fmt="%"),
+           Row("تحقيق التارجت", [t["ach"]], fmt="%"), Row("تكلفة المناديب", [t["cost"]]),
+           Row("صافي المساهمة", [t["contribution"]]), Row("التحصيل", [t["collected"]]),
+           Row("نسبة التحصيل", [t["coll_rate"]], fmt="%")]
+    blocks = [Table(["المؤشر", "القيمة"], kpi, title="الشركة")]
+    used = ev.weights_used()
+    cols = ["المندوب", "الدرجة", "التقدير"] + [f"{label} (من {w * 100:.1f})" for _, label, w in used] + \
+        ["صافي المبيعات", "تحقيق التارجت", "الهامش", "نسبة التحصيل", "المرتجع %"]
+    fm = ["x", "t"] + ["x"] * len(used) + ["n", "%", "%", "%", "%"]
+    rows = []
+    for r in ev.ordered():
+        parts = getattr(r, "parts", {}) or {}
+        rows.append(Row(f"{'#' + str(r.rank) if r.rank else '—'} {r.name}",
+                        [r.score, r.grade] + [parts.get(k) for k, _, _ in used] +
+                        [r.net, safe_div(r.net, r.target_m * ev.n) if r.target_m else None, r.margin,
+                         r.coll_rate, r.ret_rate]))
+    blocks.append(Table(cols, rows, fm, title="كروت المناديب (مرتبة حسب الدرجة)"))
+    return Report("rep_board", "لوحة المناديب", _sub(ev), blocks + _notes(ev))
+
+
+def _first_rep(ev, code):
+    if code and code in ev.reps:
+        return code
+    order = ev.ordered()
+    return order[0].code if order else None
+
+
+def _rep_one(ctx, params):
+    ev = ev_for(ctx, params)
+    code = _first_rep(ev, getattr(params, "rep", ""))
+    if not code:
+        return Report("rep_one", "تقرير المندوب", _sub(ev), [Para("لا يوجد مناديب للفترة.", "warn")])
+    return rpt_rep(ev, code)
+
+
+REP_REPORTS = [
+    ("rep_board", "لوحة المناديب", lambda ctx, p: rpt_board(ev_for(ctx, p))),
+    ("rep_rank", "ترتيب المناديب", lambda ctx, p: rpt_summary(ev_for(ctx, p))),
+    ("rep_one", "تقرير المندوب", _rep_one),
+    ("rep_coll", "التحصيل ومطابقة الأرصدة", lambda ctx, p: rpt_collections(ev_for(ctx, p))),
+    ("rep_inv", "الفواتير والمردودات", lambda ctx, p: rpt_invoices(ev_for(ctx, p))),
+]

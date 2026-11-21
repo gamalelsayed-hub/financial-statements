@@ -76,15 +76,15 @@ def monthly_status(ctx, months):
     rows.append(("مبيعات المناديب (الأصناف أو العملاء بالمندوب)", bool(files),
                  {m: _cell(OK) if m in monthly else _cell(OK, "من الفواتير") if m in inv_months
                   else _cell(PARTIAL, "ضمن ملف فترة") if m in ranged else _cell(MISSING) for m in months},
-                 "«تقييم المناديب» ← البيانات. «ضمن ملف فترة» = الشهر داخل ملف مجمّع، فما يتقيّم لوحده إلا لو "
+                 "«الإعدادات» ← «المناديب». «ضمن ملف فترة» = الشهر داخل ملف مجمّع، فما يتقيّم لوحده إلا لو "
                  "فواتيره مرفوعة («من الفواتير»)."))
     for table, name in (("invoices", "فواتير المناديب"), ("sales_returns", "مردودات المبيعات"), ("receipts", "سندات القبض")):
         ps = set(db.monthly_counts(table))
         rows.append((name, bool(ps), {m: _cell(OK if m in ps else MISSING) for m in months},
-                     "«تقييم المناديب» ← البيانات."))
+                     "«الإعدادات» ← «المناديب»."))
     com = set(db.commissions())
     rows.append(("عمولات المناديب", bool(com), {m: _cell(OK if m in com else MISSING) for m in months},
-                 "«تقييم المناديب» ← البيانات ← العمولات الشهرية."))
+                 "«الإعدادات» ← «المناديب» ← العمولات الشهرية."))
     return rows
 
 
@@ -111,7 +111,7 @@ def setup_status(ctx, end):
         note = "، ".join(x for x in (f"بدون راتب: {'، '.join(no_sal[:4])}" if no_sal else "",
                                      f"بدون تارجت: {'، '.join(no_tgt[:4])}" if no_tgt else "") if x)
         out.append(("بيانات المناديب (الراتب والتارجت)", PARTIAL if bad else OK, note or f"{len(active)} مندوب مكتمل",
-                    "«تقييم المناديب» ← البيانات ← جدول المناديب."))
+                    "«الإعدادات» ← «المناديب» ← جدول المناديب."))
     cm = db.customer_master()
     out.append(("بيانات العملاء (الفرع والمندوب)", OK if cm else UNUSED, f"{len(cm):,} عميل" if cm else "غير مرفوعة",
                 "«الأصناف والعملاء» ← بيانات العملاء."))

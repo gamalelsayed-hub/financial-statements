@@ -167,32 +167,54 @@ def test_reps_and_commissions_files():
 
 
 def test_screen(db):
+    """The rep reports in «التقارير» (the cards board, a rep's report from a card) and the data tab of «الإعدادات»."""
     pytest.importorskip("PySide6")
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
-    from fsapp.ui.reps_view import RepsPage
+    from fsapp.system import reports as R
+    from fsapp.system.calc import Ctx
+    from fsapp.ui.reps_view import RepsDataPage
+    from fsapp.ui.system_window import ReportsPage
     app = QApplication.instance() or QApplication([])
 
     class Win:
-        pass
+        def remember_place(self):
+            pass
+
+        def current_period(self):
+            return "2026-02"
+
+        def data_changed(self):
+            self.ctx = Ctx(db)
     win = Win()
-    win.db, win.ctx = db, None
-    page = RepsPage(win)
+    win.db, win.ctx = db, Ctx(db)
+    win.params = lambda: R.Params(end="2026-02", n=2)
+    page = ReportsPage(win)
     page.resize(1400, 900)
     page.load()
-    assert page.ev is not None and page.rep.count() == 2
-    page.open_report("1002")
-    assert page.tabs.currentIndex() == 2
-    page.mode.setCurrentIndex(1)
-    assert page.months() == [page.end_month()]
+    page.open_report("rep_board")
+    assert page.key() == "rep_board" and page.right.currentWidget() is page.board and page.board.box is not None
+    assert page.reps_pdf.isVisibleTo(page) and not page.rep.isVisibleTo(page)
+    page.open_report_of_rep("1002")
+    assert page.key() == "rep_one" and page.rep.currentData() == "1002" and page.rep.count() == 2
+    assert db.reps()["1002"]["name"] in page.current_report.title
+    page.view.setCurrentIndex(page.view.findData("period"))
+    assert page.current_report and page.right.currentWidget() is page.browser
+    data = RepsDataPage(win)
+    data.load()
     out = os.environ.get("REPS_PREVIEW")
     if out:
-        page.mode.setCurrentIndex(0)
+        page.open_report("rep_board")
         page.show()
-        for i, name in ((0, "board"), (2, "rep"), (3, "collections"), (5, "data")):
-            page.tabs.setCurrentIndex(i)
-            app.processEvents()
-            page.grab().save(os.path.join(out, f"{name}.png"))
+        app.processEvents()
+        page.grab().save(os.path.join(out, "board.png"))
+        page.open_report_of_rep("1001")
+        app.processEvents()
+        page.grab().save(os.path.join(out, "rep.png"))
+        data.resize(1400, 900)
+        data.show()
+        app.processEvents()
+        data.grab().save(os.path.join(out, "data.png"))
     app.processEvents()
 
 

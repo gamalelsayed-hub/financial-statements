@@ -24,7 +24,7 @@ STAGES = [
      "files": ["fsapp/system/blocks.py", "fsapp/system/aging.py", "fsapp/categories.py", "fsapp/classifier.py",
                "fsapp/system/diagnose.py", "fsapp/system/checklist.py", "fsapp/system/reports.py", "fsapp/system/render.py", "fsapp/system/dashboard.py"],
      "intro": ("شكل التقرير، ثم كل التقارير، ثم تحويلها لـ HTML و Excel. categories و classifier من وضع التحليل السريع لكن التشخيص يحتاجهم لاقتراح الربط بالاسم، فتكتبهم هنا. "
-               "تنبيه: في آخر reports.py علّق سطري الاستيراد من annual و item_reports واحذفهم من ALL_REPORTS و REPORT_GROUPS مؤقتًا، وترجعهم في المرحلتين 5 و 6."),
+               "تنبيه: في آخر reports.py علّق أسطر الاستيراد من annual و item_reports و reps واحذفهم من ALL_REPORTS و REPORT_GROUPS (ومعاهم REP_KEYS في VIEWS) مؤقتًا، وترجعهم في المرحلتين 5 و 6."),
      "check": ("from fsapp.system import reports as R, render ثم rep = R.build('is', ctx, R.Params(end='2026-02')) ثم "
                "open('is.html', 'w', encoding='utf-8').write(render.report_html(rep, 'شركتي')) وافتح الملف في المتصفح. وجرب render.write_excel([rep], 'شركتي', 'is.xlsx').")},
     {"id": "s5", "title": "المرحلة 5: مسودة القوائم والمقارنات السنوية",
@@ -35,7 +35,7 @@ STAGES = [
     {"id": "s6", "title": "المرحلة 6: الأصناف ومبيعاتها ومشترياتها",
      "files": ["fsapp/system/items.py", "fsapp/system/item_reports.py", "fsapp/system/rep_data.py", "fsapp/system/reps.py"],
      "intro": ("قراءة ملفات الأصناف والمبيعات والمشتريات (Excel و PDF) وتقاريرها. بعد item_reports.py رجّع سطر استيراده في reports.py. "
-               "وآخرها تقييم المناديب: rep_data.py يقرأ تقارير النظام (المبيعات بالمندوب، الفواتير، سندات القبض)، و reps.py يحسب الدرجة والتقارير."),
+               "وآخرها تقييم المناديب: rep_data.py يقرأ تقارير النظام (المبيعات بالمندوب، الفواتير، سندات القبض)، و reps.py يحسب الدرجة والتقارير. بعد reps.py رجّع سطر استيراد REP_REPORTS في reports.py (مجموعة «المندوبين» في شاشة التقارير)."),
      "check": ("from fsapp.system import items as I ثم span, rows, check = I.parse_sales_pdf('مبيعات.pdf') ثم len(rows) و check['grand']. "
                "وللمناديب: from fsapp.system import reps as RP ثم ev = RP.evaluate(db, ['2026-01', '2026-02']) ثم "
                "[(r.name, r.score, r.grade) for r in ev.ordered()].")},

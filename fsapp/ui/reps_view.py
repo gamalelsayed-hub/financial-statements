@@ -241,7 +241,7 @@ class Board(QScrollArea):
         grid.setSpacing(12)
         cols = self.cols = self._columns()
         for i, r in enumerate(ev.ordered()):
-            grid.addWidget(RepCard(r, ev, self.page.open_report), i // cols, i % cols, Qt.AlignTop)
+            grid.addWidget(RepCard(r, ev, self.page.open_report_of_rep), i // cols, i % cols, Qt.AlignTop)
         v.addLayout(grid)
         v.addStretch()
         self.setWidget(box)
@@ -588,191 +588,23 @@ class DataTab(QWidget):
         QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
 
-# ================================================================== the page
-class RepsPage(QWidget):
+# ================================================================== the reps' data in «الإعدادات»
+class RepsDataPage(QWidget):
+    """The reps' uploads, table and settings — a tab of the settings page. Their reports are in «التقارير»."""
+
     def __init__(self, win):
         super().__init__()
-        from .system_window import ReportView
         self.win = win
-        self.ev = None
         lay = QVBoxLayout(self)
-        top = QHBoxLayout()
-        top.addWidget(QLabel("الفترة:"))
-        self.mode = QComboBox()
-        for text, k in (("من أول السنة حتى", "ytd"), ("الشهر فقط", "month"), ("من شهر محدد حتى", "from")):
-            self.mode.addItem(text, k)
-        self.start = QComboBox()
-        self.end = QComboBox()
-        for w in (self.mode, self.start, self.end):
-            w.currentIndexChanged.connect(self.refresh)
-        top.addWidget(self.mode)
-        top.addWidget(self.start)
-        top.addWidget(self.end)
-        self.rep = QComboBox()
-        self.rep.setMinimumWidth(220)
-        self.rep.currentIndexChanged.connect(self.show_rep)
-        top.addStretch()
-        for text, fn in (("📊 Excel (التقارير)", self.export_excel), ("📄 PDF (الصفحة الحالية)", self.export_pdf),
-                         ("📚 PDF (كل المناديب)", self.export_all_pdf)):
-            top.addWidget(_btn(text, fn))
-        lay.addLayout(top)
-        self.tabs = QTabWidget()
-        self.board = Board(self)
-        self.summary = ReportView()
-        rep_box = QWidget()
-        rv = QVBoxLayout(rep_box)
-        rh = QHBoxLayout()
-        rh.addWidget(QLabel("المندوب:"))
-        rh.addWidget(self.rep)
-        rh.addStretch()
-        rv.addLayout(rh)
-        self.rep_view = ReportView()
-        rv.addWidget(self.rep_view, 1)
-        self.coll = ReportView()
-        self.inv = ReportView()
+        lay.setContentsMargins(0, 0, 0, 0)
         self.data = DataTab(self)
-        for w, t in ((self.board, "🏆 لوحة المناديب"), (self.summary, "📋 الترتيب"), (rep_box, "📄 تقرير المندوب"),
-                     (self.coll, "💰 التحصيل ومطابقة الأرصدة"), (self.inv, "🧾 الفواتير والمردودات"),
-                     (self.data, "⚙ البيانات والإعدادات")):
-            self.tabs.addTab(w, t)
-        lay.addWidget(self.tabs, 1)
+        lay.addWidget(self.data)
 
-    # ---------------- period
     def end_month(self):
-        return self.end.currentData()
-
-    def months(self):
-        end = self.end.currentData()
-        if not end:
-            return []
-        mode = self.mode.currentData()
-        if mode == "month":
-            return [end]
-        if mode == "from":
-            a = self.start.currentData() or end
-            return RP.months_between(min(a, end), end)
-        fs = int(self.win.db.setting_float("fiscal_start") or 1)
-        y = int(end[:4]) if int(end[5:7]) >= fs else int(end[:4]) - 1
-        return RP.months_between(f"{y:04d}-{fs:02d}", end)
+        return self.win.current_period()
 
     def load(self):
-        self.reload()
+        self.data.load()
 
     def reload(self):
-        months = RP.available_months(self.win.db)
-        cur_e, cur_s = self.end.currentData(), self.start.currentData()
-        for w, cur in ((self.end, cur_e), (self.start, cur_s)):
-            w.blockSignals(True)
-            w.clear()
-            for m in reversed(months):
-                w.addItem(calc.month_label(m), m)
-            i = w.findData(cur) if cur else -1
-            w.setCurrentIndex(i if i >= 0 else (w.count() - 1 if w is self.start else 0))
-            w.blockSignals(False)
-        self.data.load()
-        self.refresh()
-
-    def refresh(self):
-        self.start.setVisible(self.mode.currentData() == "from")
-        months = self.months()
-        if not months:
-            self.ev = None
-            msg = "لا توجد بيانات مناديب بعد — ارفع التقارير من تبويب «⚙ البيانات والإعدادات»."
-            for v in (self.summary, self.rep_view, self.coll, self.inv):
-                v.show_message(msg)
-            self.board.setWidget(QLabel(msg))
-            return
-        try:
-            with Progress(self, "حساب تقييم المناديب") as bar:
-                bar.step(20, "قراءة البيانات")
-                self.ev = RP.evaluate(self.win.db, months)
-                bar.step(80, "التقارير")
-                company = self.win.ctx.company if self.win.ctx else ""
-                self.board.show_eval(self.ev, f"لوحة أداء المناديب — {calc.range_label(months)}")
-                self.summary.show_report(RP.rpt_summary(self.ev), company)
-                self.coll.show_report(RP.rpt_collections(self.ev), company)
-                self.inv.show_report(RP.rpt_invoices(self.ev), company)
-        except Exception as e:  # noqa: BLE001
-            QMessageBox.warning(self, "تنبيه", f"تعذر حساب التقييم:\n{e}")
-            return
-        cur = self.rep.currentData()
-        self.rep.blockSignals(True)
-        self.rep.clear()
-        for r in self.ev.ordered():
-            self.rep.addItem(f"{'#' + str(r.rank) if r.rank else '—'}  {r.name}", r.code)
-        i = self.rep.findData(cur) if cur else 0
-        self.rep.setCurrentIndex(max(0, i))
-        self.rep.blockSignals(False)
-        self.show_rep()
-
-    def show_rep(self):
-        code = self.rep.currentData()
-        if self.ev and code:
-            self.rep_view.show_report(RP.rpt_rep(self.ev, code), self.win.ctx.company if self.win.ctx else "")
-
-    def open_report(self, code):
-        i = self.rep.findData(code)
-        if i >= 0:
-            self.rep.setCurrentIndex(i)
-        self.tabs.setCurrentIndex(2)
-
-    # ---------------- export
-    def _all_reports(self):
-        ev = self.ev
-        return [RP.rpt_summary(ev)] + [RP.rpt_rep(ev, r.code) for r in ev.ordered()] + [RP.rpt_collections(ev),
-                                                                                         RP.rpt_invoices(ev)]
-
-    def _save_path(self, ext, what):
-        company = self.win.ctx.company if self.win.ctx else ""
-        name = f"{company} - {what} - {calc.range_label(self.ev.months)}".replace("/", "-").strip(" -")
-        start = QSettings().value("last_dir", os.path.expanduser("~"))
-        path, _ = QFileDialog.getSaveFileName(self, "حفظ", os.path.join(start, f"{name}.{ext}"),
-                                              "PDF (*.pdf)" if ext == "pdf" else "Excel (*.xlsx)")
-        return path
-
-    def export_excel(self):
-        if not self.ev:
-            return
-        path = self._save_path("xlsx", "تقييم المناديب")
-        if not path:
-            return
-        try:
-            render.write_excel(self._all_reports(), self.win.ctx.company if self.win.ctx else "", path)
-        except OSError as e:
-            QMessageBox.warning(self, "تنبيه", f"تعذر الحفظ (الملف مفتوح؟):\n{e}")
-            return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
-
-    def export_pdf(self):
-        if not self.ev:
-            return
-        i = self.tabs.currentIndex()
-        if i == 5:
-            return
-        path = self._save_path("pdf", ["لوحة المناديب", "ترتيب المناديب", self.rep.currentText().split("  ")[-1],
-                                       "التحصيل", "الفواتير والمردودات"][i])
-        if not path:
-            return
-        if i == 0:
-            self.board.export_pdf(path)
-        else:
-            from .system_window import write_pdf
-            company = self.win.ctx.company if self.win.ctx else ""
-            rep = [RP.rpt_summary(self.ev), RP.rpt_rep(self.ev, self.rep.currentData()), RP.rpt_collections(self.ev),
-                   RP.rpt_invoices(self.ev)][i - 1]
-            write_pdf(render.reports_html([rep], company), path, landscape=i in (1, 3, 4))
-        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
-
-    def export_all_pdf(self):
-        if not self.ev:
-            return
-        path = self._save_path("pdf", "تقارير المناديب")
-        if not path:
-            return
-        from .system_window import write_pdf
-        with Progress(self, "تصدير PDF") as bar:
-            bar.step(30, "تجهيز التقارير")
-            html = render.reports_html(self._all_reports(), self.win.ctx.company if self.win.ctx else "")
-            bar.step(60, "الكتابة")
-            write_pdf(html, path, landscape=True)
-        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+        self.win.data_changed()       # the reports read the new data (the evaluation is computed again)

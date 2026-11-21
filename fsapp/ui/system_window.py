@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from .. import importer
 from ..system import aging, calc, defaults, diagnose, items, migrate, render
 from ..system import reports as R
+from ..system import reps as RP
 from ..system.db import ACCOUNT_FIELDS, Account, CompanyDB
 from ..updater import UpdateChecker
 from ..version import BUILD
@@ -26,7 +27,7 @@ from .aging_view import AgingPage
 from .dashboard_view import DashboardPage
 from .items_view import ItemsPage
 from .progress import Progress
-from .reps_view import RepsPage
+from .reps_view import Board, RepsDataPage
 from . import zoom
 from .table_tools import freeze
 from .zoom import pt
@@ -378,6 +379,21 @@ class SettingsPage(QWidget):
 
 
 # ================================================================== lists page
+class SettingsTabs(QTabWidget):
+    """«الإعدادات»: the company's settings, and the reps' data and settings."""
+
+    def __init__(self, win):
+        super().__init__()
+        self.general = SettingsPage(win)
+        self.reps = RepsDataPage(win)
+        self.addTab(self.general, "⚙ عام")
+        self.addTab(self.reps, "🧑‍💼 المناديب (البيانات والإعدادات)")
+
+    def load(self):
+        self.general.load()
+        self.reps.load()
+
+
 class ListsPage(QWidget):
     TABS = [
         ("fs_items", "بنود القوائم المالية", ["البند", "القسم", "دور في النسب"],
@@ -1542,11 +1558,21 @@ class ReportsPage(QWidget):
         self.supp.addItem("تفصيلي حسب النوع (محلي / خارجي / خدمات)", "type")
         self.supp.addItem("إجمالي", "total")
         self.supp.currentIndexChanged.connect(self._supp_changed)
-        for w in (self.branch_lbl, self.branch, self.view_lbl, self.view, self.supp_lbl, self.supp):
+        self.rep_lbl = QLabel("المندوب:")
+        self.rep = QComboBox()
+        self.rep.currentIndexChanged.connect(lambda *_: self.show_report())
+        self.reps_pdf = QPushButton("📚 PDF كل تقارير المناديب")
+        self.reps_pdf.clicked.connect(self.export_reps_pdf)
+        for w in (self.branch_lbl, self.branch, self.view_lbl, self.view, self.supp_lbl, self.supp, self.rep_lbl,
+                  self.rep, self.reps_pdf):
             lv.addWidget(w)
         split.addWidget(left)
         self.browser = ReportView()
-        split.addWidget(self.browser)
+        self.board = Board(self)
+        self.right = QStackedWidget()
+        self.right.addWidget(self.browser)
+        self.right.addWidget(self.board)
+        split.addWidget(self.right)
         split.setStretchFactor(1, 4)
         split.setSizes([260, 1000])
         lay.addWidget(split)
@@ -1643,10 +1669,55 @@ class ReportsPage(QWidget):
         it = self.tree.currentItem()
         return it.data(0, Qt.UserRole) if it else None
 
+    def open_report_of_rep(self, code):
+        """A card's «تقرير المندوب» button: the rep's report, same period."""
+        self.view_choice["rep_one"] = self.view.currentData()
+        i = self.rep.findData(code)
+        if i >= 0:
+            self.rep.blockSignals(True)
+            self.rep.setCurrentIndex(i)
+            self.rep.blockSignals(False)
+        self.open_report("rep_one")
+
+    def _fill_reps(self, ev):
+        cur = self.rep.currentData()
+        self.rep.blockSignals(True)
+        self.rep.clear()
+        for r in ev.ordered():
+            self.rep.addItem(f"{'#' + str(r.rank) if r.rank else '—'}  {r.name}", r.code)
+        self.rep.setCurrentIndex(max(0, self.rep.findData(cur)) if cur else 0)
+        self.rep.blockSignals(False)
+
+    def export_reps_pdf(self):
+        """Every rep report of the period in one PDF: the ranking, each rep, the collection, the invoices."""
+        params = self.win.params()
+        if not params:
+            return
+        params.view = self.view.currentData() or "ytd"
+        ev = RP.ev_for(self.win.ctx, params)
+        name = f"{self.win.ctx.company} - تقارير المناديب - {calc.range_label(ev.months)}".replace("/", "-")
+        start = QSettings().value("last_dir", os.path.expanduser("~"))
+        path, _ = QFileDialog.getSaveFileName(self, "حفظ", os.path.join(start, f"{name}.pdf"), "PDF (*.pdf)")
+        if not path:
+            return
+        with Progress(self, "تصدير PDF") as bar:
+            bar.step(30, "تجهيز التقارير")
+            reps = [RP.rpt_summary(ev)] + [RP.rpt_rep(ev, r.code) for r in ev.ordered()] + \
+                [RP.rpt_collections(ev), RP.rpt_invoices(ev)]
+            html = render.reports_html(reps, self.win.ctx.company)
+            bar.step(60, "الكتابة")
+            write_pdf(html, path, landscape=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
     def show_report(self):
         key = self.key()
         if not key:
             return
+        is_rep = key in R.REP_KEYS
+        self.rep.setVisible(key == "rep_one")
+        self.rep_lbl.setVisible(key == "rep_one")
+        self.reps_pdf.setVisible(is_rep)
+        self.right.setCurrentWidget(self.browser)
         self.branch.setVisible(key in R.NEEDS_BRANCH)
         self.branch_lbl.setVisible(key in R.NEEDS_BRANCH)
         self._fill_views(key)
@@ -1663,12 +1734,24 @@ class ReportsPage(QWidget):
         params.view = self.view.currentData()
         params.supp_view = self.supp.currentData() or "type"
         try:
+            if is_rep:
+                QApplication.setOverrideCursor(Qt.WaitCursor)
+                try:
+                    ev = RP.ev_for(self.win.ctx, params)
+                finally:
+                    QApplication.restoreOverrideCursor()
+                self._fill_reps(ev)
+                params.rep = self.rep.currentData() or ""
             rep = R.build(key, self.win.ctx, params)
         except Exception:  # noqa: BLE001
             self.browser.show_message("حدث خطأ أثناء بناء التقرير:\n" + traceback.format_exc())
             self.current_report = None
             return
         self.current_report = rep
+        if key == "rep_board":
+            self.board.show_eval(ev, f"لوحة أداء المناديب — {calc.range_label(ev.months)}")
+            self.right.setCurrentWidget(self.board)
+            return
         self.browser.show_report(rep, self.win.ctx.company)
 
 
@@ -1812,9 +1895,8 @@ class SystemWindow(QMainWindow):
         self.pages = [("📊 لوحة التحكم", self.dashboard), ("📈 التقارير", self.reports_page),
                       ("👥 العملاء والموردين", self.aging_page),
                       ("🗓 البيانات الشهرية", DataPage(self)), ("📦 الأصناف والعملاء", ItemsPage(self)),
-                      ("🧑‍💼 تقييم المناديب", RepsPage(self)),
                       ("🔗 ربط الحسابات", MappingPage(self)),
-                      ("📋 البنود", ListsPage(self)), ("⚙ الإعدادات", SettingsPage(self))]
+                      ("📋 البنود", ListsPage(self)), ("⚙ الإعدادات", SettingsTabs(self))]
         for title, page in self.pages:
             self.nav.addItem(title)
             self.stack.addWidget(page)
@@ -2009,6 +2091,15 @@ class SystemWindow(QMainWindow):
         rp = self.reports_page
         if self.stack.currentWidget() is self.dashboard and not everything:
             (self.dashboard.export_excel if fmt == "xlsx" else self.dashboard.export_pdf)()
+            return
+        if (self.stack.currentWidget() is rp and not everything and fmt == "pdf" and rp.key() == "rep_board"
+                and rp.current_report):
+            name = f"{self.ctx.company} - لوحة المناديب - {calc.month_label(params.end)}".replace("/", "-")
+            start = QSettings().value("last_dir", os.path.expanduser("~"))
+            path, _ = QFileDialog.getSaveFileName(self, "حفظ", os.path.join(start, f"{name}.pdf"), "PDF (*.pdf)")
+            if path:
+                rp.board.export_pdf(path)
+                QDesktopServices.openUrl(QUrl.fromLocalFile(path))
             return
         if everything:
             reps = []

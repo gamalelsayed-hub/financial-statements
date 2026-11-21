@@ -17,6 +17,7 @@ class Params:
     branch: str = ""
     view: str = "period"    # period | ytd
     supp_view: str = "type"  # suppliers: type (local / foreign / services) | total
+    rep: str = ""           # rep reports: the rep's code
 
     def months(self):
         return months_range(self.end, self.n)
@@ -889,6 +890,7 @@ VIEWS = {
     "m_br": [("صافي المبيعات", "sales"), ("صافي الربح بعد التوزيع", "profit")],
     "exp": [("مقارنة بين فترتين", "compare"), ("شهريًا حسب المجموعة", "monthly")],
 }
+REP_KEYS = {"rep_board", "rep_rank", "rep_one", "rep_coll", "rep_inv"}
 # old keys (before merging) → (new key, view): saved settings and links still open the right report
 OLD_KEYS = {"diag": ("checks", None), "m_su": ("su", "monthly"), "m_cash": ("su", "cash"),
             "m_br_sales": ("m_br", "sales"), "m_br_profit": ("m_br", "profit"), "m_exp": ("exp", "monthly")}
@@ -926,10 +928,12 @@ MONTHLY_REPORTS = [
 ]
 from .annual import ANNUAL_REPORTS  # noqa: E402
 from .item_reports import ITEM_REPORTS  # noqa: E402
+from .reps import REP_REPORTS, REP_VIEWS  # noqa: E402
 
-ALL_REPORTS = PERIOD_REPORTS + MONTHLY_REPORTS + ITEM_REPORTS + ANNUAL_REPORTS
+ALL_REPORTS = PERIOD_REPORTS + MONTHLY_REPORTS + ITEM_REPORTS + ANNUAL_REPORTS + REP_REPORTS
 REPORT_GROUPS = [("— تقارير الفترة —", PERIOD_REPORTS), ("— التحليل الشهري —", MONTHLY_REPORTS),
-                 ("— تقارير الأصناف —", ITEM_REPORTS), ("— المقارنات السنوية —", ANNUAL_REPORTS)]
+                 ("— تقارير الأصناف —", ITEM_REPORTS), ("— المقارنات السنوية —", ANNUAL_REPORTS),
+                 ("— المندوبين —", REP_REPORTS)]
 # the reports screen shows them by subject (a tree with collapsible groups); exports keep the order above
 SUBJECT_GROUPS = [
     ("📌 نظرة عامة", ["summary", "inputs", "checks", "ratios", "m_kpi"]),
@@ -937,6 +941,7 @@ SUBJECT_GROUPS = [
     ("🗓 القوائم شهرًا بشهر", ["m_is", "m_bs", "m_cf"]),
     ("🏬 الفروع والمصروفات", ["branches", "m_br", "m_branch", "branch_exp", "exp"]),
     ("👥 العملاء والموردين", ["customers", "suppliers"]),
+    ("🧑‍💼 المندوبين", ["rep_board", "rep_rank", "rep_one", "rep_coll", "rep_inv"]),
 ]
 
 
@@ -958,6 +963,8 @@ def subject_groups():
 
 NEEDS_SUPP_VIEW = {"suppliers", "it_purch"}
 NEEDS_BRANCH = {"branch_exp", "m_branch"}
+for _k in REP_KEYS:
+    VIEWS[_k] = REP_VIEWS
 NEEDS_VIEW = set(VIEWS)
 
 
