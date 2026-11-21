@@ -421,7 +421,7 @@ class Evaluation:
                               (f" منها {self.ret_unlinked[0]} بقيمة {self.ret_unlinked[1]:,.0f} بدون مندوب."
                                if self.ret_unlinked[0] else ""))
         elif not self.has_returns:
-            self.notes.append("لا يوجد تقرير مردودات للفترة — ارفعه من «البيانات» عشان تظهر نسبة المرتجع لكل مندوب وعميل.")
+            self.notes.append("لا يوجد تقرير مردودات للفترة — ارفعه من «الإعدادات» ← «المناديب» عشان تظهر نسبة المرتجع لكل مندوب وعميل.")
 
     @property
     def company_ret_rate(self):
