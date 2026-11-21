@@ -1,0 +1,26 @@
+name: Preview UI (temporary)
+on:
+  push:
+    branches: [feature/ui-review]
+permissions:
+  contents: write
+jobs:
+  preview:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest
+      - shell: bash
+        env:
+          QT_QPA_PLATFORM: windows
+        run: mkdir preview && REPS_PREVIEW=preview python -m pytest -q tests/test_reps.py -k test_screen
+      - name: Push screenshots to a throwaway branch
+        shell: bash
+        run: |
+          mkdir shots && cp preview/*.png shots/
+          cd shots && git init -q -b preview-shots && git add . \
+            && git -c user.name=ci -c user.email=ci@example.com commit -q -m shots \
+            && git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" preview-shots
